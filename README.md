@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wardarr
+
+A Next.js application with Express backend for media processing, featuring NSFW content detection, image hashing, and SQLite storage.
+
+## Tech Stack
+
+- **Frontend**: Next.js with TypeScript and Tailwind CSS
+- **Backend**: Express.js 
+- **Database**: SQLite (via better-sqlite3)
+- **AI**: NSFWJS for content detection
+- **Media Processing**: FFmpeg for video processing
+- **Image Analysis**: Sharp, Jimp, and BlurHash for image processing and perceptual hashing
+
+## Prerequisites
+
+- Node.js (v18+)
+- FFmpeg installed on your system
+- (Optional) Visual Studio Code
 
 ## Getting Started
 
-First, run the development server:
-
+1. Clone the repository
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/yourusername/wardarr.git
+cd wardarr
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Start the development server
+```bash
+npm run dev:server
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Open your browser and navigate to http://localhost:3000
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+- `npm run dev` - Run Next.js development server only
+- `npm run dev:server` - Run the complete application with Express backend (using nodemon)
+- `npm run build` - Build the Next.js application
+- `npm run start` - Start the Next.js production server
+- `npm run server` - Start the Express server (production mode)
+- `npm run lint` - Run ESLint
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `/pages` - Next.js pages
+- `/components` - React components
+- `/public` - Static assets
+- `/styles` - CSS and Tailwind styles
+- `/server.js` - Express server setup
+- `/lib` - Utility functions and shared code
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
