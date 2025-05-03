@@ -17,7 +17,7 @@ fi
 source "$REPO_DIR/venv/bin/activate"
 
 # Set default parameters
-THRESHOLD=${2:-0.9}
+THRESHOLD=${1:-0.9}
 CPU_FLAG=""
 MAX_STILLS="--max-stills=2"
 STRICT_FLAG=""

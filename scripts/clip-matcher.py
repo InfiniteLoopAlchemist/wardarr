@@ -24,7 +24,7 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
 # Similarity threshold (0.40 default is stricter than before)
-SIMILARITY_THRESHOLD = 0.40
+SIMILARITY_THRESHOLD = 0.90
 
 # Temp directory
 TEMP_DIR = 'temp'
