@@ -52,6 +52,7 @@ yarn-error.log*
 .yarn/build-state.yml
 .yarn/install-state.gz
 /temp
+/verification
 # VS Code
 .vscode/*
 !.vscode/settings.json
