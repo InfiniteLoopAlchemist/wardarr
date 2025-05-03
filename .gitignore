@@ -9,7 +9,11 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+/venv
+.venv/
+.venv/lib64/
 
+/ib
 # testing
 /coverage
 
