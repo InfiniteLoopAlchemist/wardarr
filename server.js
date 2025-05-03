@@ -141,170 +141,219 @@ app.post('/api/libraries', async (req, res) => {
 });
 console.log('[ROUTE] Registered route: POST /api/libraries');
 
-// GET /api/shows
-app.get('/api/shows', async (req, res) => {
-  console.log('[ROUTE] GET /api/shows', req.query);
+// GET /api/content/:type
+app.get('/api/content/:type', async (req, res) => {
+  const contentType = req.params.type;  // shows, seasons, or episodes
+  const contentPath = req.query.path;
   
-  if (!req.query.path) {
-    return res.status(400).json({ error: 'Missing path parameter' });
+  console.log(`[ROUTE] GET /api/content/${contentType}`, req.query);
+  
+  if (!contentPath) {
+    return res.status(400).json({ error: `Missing path parameter for ${contentType}` });
   }
 
   // Ensure path is absolute by adding leading slash if missing
-  let dirPath = req.query.path;
-  if (!dirPath.startsWith('/')) {
-    dirPath = '/' + dirPath;
+  let fullPath = contentPath;
+  if (!fullPath.startsWith('/')) {
+    fullPath = '/' + fullPath;
   }
   
-  console.log(`[ROUTE] Scanning directory: ${dirPath}`);
+  console.log(`[ROUTE] Scanning ${contentType} directory: ${fullPath}`);
   
   try {
     // Check if path exists and is accessible
-    const exists = await validatePath(dirPath);
+    const exists = await validatePath(fullPath);
     if (!exists) {
-      return res.status(400).json({ error: `Directory not found or not accessible: ${dirPath}` });
+      return res.status(400).json({ error: `Directory not found or not accessible: ${fullPath}` });
     }
     
     // Read directory contents
-    const files = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const files = await fs.promises.readdir(fullPath, { withFileTypes: true });
     
-    // Filter for directories only, they represent TV shows
-    const shows = files
-      .filter(file => file.isDirectory())
-      .map(dir => {
-        // Extract show metadata from directory name if present
-        // Format example: "South Park (1997) [tvdbid-75897]"
-        const name = dir.name;
-        const yearMatch = name.match(/\((\d{4})\)/);
-        const idMatch = name.match(/\[tvdbid-(\d+)\]/);
-        
-        return {
-          name: name,
-          path: path.join(dirPath, name),
-          year: yearMatch ? yearMatch[1] : null,
-          tvdbId: idMatch ? idMatch[1] : null,
-        };
-      });
+    let result = [];
     
-    console.log(`[ROUTE] Found ${shows.length} shows in ${dirPath}`);
-    res.json(shows);
+    // Process based on content type
+    if (contentType === 'shows') {
+      // Filter for directories only, they represent TV shows
+      result = files
+        .filter(file => file.isDirectory())
+        .map(dir => {
+          // Extract show metadata from directory name if present
+          // Format example: "South Park (1997) [tvdbid-75897]"
+          const name = dir.name;
+          const yearMatch = name.match(/\((\d{4})\)/);
+          const idMatch = name.match(/\[tvdbid-(\d+)\]/);
+          
+          return {
+            name: name,
+            path: path.join(fullPath, name),
+            year: yearMatch ? yearMatch[1] : null,
+            tvdbId: idMatch ? idMatch[1] : null,
+          };
+        });
+      
+      console.log(`[ROUTE] Found ${result.length} shows in ${fullPath}`);
+    }
+    else if (contentType === 'seasons') {
+      // Filter for directories only, they represent seasons
+      // Format: "Season 01", "Season 1", etc.
+      result = files
+        .filter(file => file.isDirectory() && /season\s+\d+/i.test(file.name))
+        .map(dir => {
+          const seasonNumber = dir.name.match(/season\s+(\d+)/i);
+          return {
+            name: dir.name,
+            path: path.join(fullPath, dir.name),
+            number: seasonNumber ? parseInt(seasonNumber[1], 10) : null
+          };
+        })
+        .sort((a, b) => (a.number || 0) - (b.number || 0));
+      
+      console.log(`[ROUTE] Found ${result.length} seasons in ${fullPath}`);
+    }
+    else if (contentType === 'episodes') {
+      // Read directory contents without file types info
+      const fileNames = await fs.promises.readdir(fullPath);
+      
+      // Filter for video files
+      const videoExtensions = ['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv'];
+      result = fileNames
+        .filter(file => {
+          const ext = path.extname(file).toLowerCase();
+          return videoExtensions.includes(ext);
+        })
+        .map(file => {
+          // Try to extract episode information from filename
+          // Format examples:
+          // "South Park (1997) - S01E06 - Death [Bluray-1080p][AC3 5.1][x264]-W4NK3R.mkv"
+          // "Show.Name.S01E02.Episode.Name.1080p.mkv"
+          const episodeMatch = file.match(/S(\d+)E(\d+)/i);
+          const episodeNameMatch = file.match(/[sS]\d+[eE]\d+\s*-\s*([^[\]]+)/);
+          
+          return {
+            filename: file,
+            path: path.join(fullPath, file),
+            season: episodeMatch ? parseInt(episodeMatch[1], 10) : null,
+            episode: episodeMatch ? parseInt(episodeMatch[2], 10) : null,
+            name: episodeNameMatch ? episodeNameMatch[1].trim() : file
+          };
+        })
+        .sort((a, b) => {
+          if (a.season !== b.season) return (a.season || 0) - (b.season || 0);
+          return (a.episode || 0) - (b.episode || 0);
+        });
+      
+      console.log(`[ROUTE] Found ${result.length} episodes in ${fullPath}`);
+    }
+    else {
+      return res.status(400).json({ error: `Invalid content type: ${contentType}` });
+    }
+    
+    res.json(result);
   } catch (err) {
     console.error(`[ERROR] Error scanning directory: ${err.message}`);
     res.status(500).json({ error: `Failed to scan directory: ${err.message}` });
   }
 });
-console.log('[ROUTE] Registered route: GET /api/shows');
+console.log('[ROUTE] Registered route: GET /api/content/:type');
+
+// Keep the original query parameter-based routes for backward compatibility
+// GET /api/shows
+app.get('/api/shows', async (req, res) => {
+  console.log('[ROUTE] GET /api/shows (query param)', req.query);
+  if (!req.query.path) {
+    return res.status(400).json({ error: 'Missing path parameter' });
+  }
+  // Forward to the new endpoint
+  req.params.type = 'shows';
+  req.url = `/api/content/shows?path=${encodeURIComponent(req.query.path)}`;
+  app.handle(req, res);
+});
 
 // GET /api/seasons
 app.get('/api/seasons', async (req, res) => {
-  console.log('[ROUTE] GET /api/seasons', req.query);
-  
+  console.log('[ROUTE] GET /api/seasons (query param)', req.query);
   if (!req.query.path) {
     return res.status(400).json({ error: 'Missing show path parameter' });
   }
-
-  // Ensure path is absolute by adding leading slash if missing
-  let showPath = req.query.path;
-  if (!showPath.startsWith('/')) {
-    showPath = '/' + showPath;
-  }
-  
-  console.log(`[ROUTE] Scanning show directory: ${showPath}`);
-  
-  try {
-    // Check if path exists and is accessible
-    const exists = await validatePath(showPath);
-    if (!exists) {
-      return res.status(400).json({ error: `Show directory not found or not accessible: ${showPath}` });
-    }
-    
-    // Read directory contents
-    const files = await fs.promises.readdir(showPath, { withFileTypes: true });
-    
-    // Filter for directories only, they represent seasons
-    // Format: "Season 01", "Season 1", etc.
-    const seasons = files
-      .filter(file => file.isDirectory() && /season\s+\d+/i.test(file.name))
-      .map(dir => {
-        const seasonNumber = dir.name.match(/season\s+(\d+)/i);
-        return {
-          name: dir.name,
-          path: path.join(showPath, dir.name),
-          number: seasonNumber ? parseInt(seasonNumber[1], 10) : null
-        };
-      })
-      .sort((a, b) => (a.number || 0) - (b.number || 0));
-    
-    console.log(`[ROUTE] Found ${seasons.length} seasons in ${showPath}`);
-    res.json(seasons);
-  } catch (err) {
-    console.error(`[ERROR] Error scanning seasons: ${err.message}`);
-    res.status(500).json({ error: `Failed to scan seasons: ${err.message}` });
-  }
+  // Forward to the new endpoint
+  req.params.type = 'seasons';
+  req.url = `/api/content/seasons?path=${encodeURIComponent(req.query.path)}`;
+  app.handle(req, res);
 });
-console.log('[ROUTE] Registered route: GET /api/seasons');
 
 // GET /api/episodes
 app.get('/api/episodes', async (req, res) => {
-  console.log('[ROUTE] GET /api/episodes', req.query);
-  
+  console.log('[ROUTE] GET /api/episodes (query param)', req.query);
   if (!req.query.path) {
     return res.status(400).json({ error: 'Missing season path parameter' });
   }
-
-  // Ensure path is absolute by adding leading slash if missing
-  let seasonPath = req.query.path;
-  if (!seasonPath.startsWith('/')) {
-    seasonPath = '/' + seasonPath;
-  }
-  
-  console.log(`[ROUTE] Scanning season directory: ${seasonPath}`);
-  
-  try {
-    // Check if path exists and is accessible
-    const exists = await validatePath(seasonPath);
-    if (!exists) {
-      return res.status(400).json({ error: `Season directory not found or not accessible: ${seasonPath}` });
-    }
-    
-    // Read directory contents
-    const files = await fs.promises.readdir(seasonPath);
-    
-    // Filter for video files
-    const videoExtensions = ['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv'];
-    const episodes = files
-      .filter(file => {
-        const ext = path.extname(file).toLowerCase();
-        return videoExtensions.includes(ext);
-      })
-      .map(file => {
-        // Try to extract episode information from filename
-        // Format examples:
-        // "South Park (1997) - S01E06 - Death [Bluray-1080p][AC3 5.1][x264]-W4NK3R.mkv"
-        // "Show.Name.S01E02.Episode.Name.1080p.mkv"
-        const episodeMatch = file.match(/S(\d+)E(\d+)/i);
-        const episodeNameMatch = file.match(/[sS]\d+[eE]\d+\s*-\s*([^[\]]+)/);
-        
-        return {
-          filename: file,
-          path: path.join(seasonPath, file),
-          season: episodeMatch ? parseInt(episodeMatch[1], 10) : null,
-          episode: episodeMatch ? parseInt(episodeMatch[2], 10) : null,
-          name: episodeNameMatch ? episodeNameMatch[1].trim() : file
-        };
-      })
-      .sort((a, b) => {
-        if (a.season !== b.season) return (a.season || 0) - (b.season || 0);
-        return (a.episode || 0) - (b.episode || 0);
-      });
-    
-    console.log(`[ROUTE] Found ${episodes.length} episodes in ${seasonPath}`);
-    res.json(episodes);
-  } catch (err) {
-    console.error(`[ERROR] Error scanning episodes: ${err.message}`);
-    res.status(500).json({ error: `Failed to scan episodes: ${err.message}` });
-  }
+  // Forward to the new endpoint
+  req.params.type = 'episodes';
+  req.url = `/api/content/episodes?path=${encodeURIComponent(req.query.path)}`;
+  app.handle(req, res);
 });
-console.log('[ROUTE] Registered route: GET /api/episodes');
+
+// Add support for path-based navigation using URL parameters
+// GET /api/path/:type/:parentType/:parentId/:itemId
+app.get('/api/path/:type/:encodedPath', async (req, res) => {
+  const { type, encodedPath } = req.params;
+  const path = decodeURIComponent(encodedPath);
+  
+  console.log(`[ROUTE] GET /api/path/${type}/${encodedPath}`);
+  
+  // Forward to the content endpoint
+  req.params.type = type;
+  req.url = `/api/content/${type}?path=${encodeURIComponent(path)}`;
+  app.handle(req, res);
+});
+
+console.log('[ROUTE] Registered backward-compatible routes: GET /api/shows, GET /api/seasons, GET /api/episodes');
+console.log('[ROUTE] Registered path-based route: GET /api/path/:type/:encodedPath');
+
+// Add specialized hierarchical browsing paths that match the UI flow
+app.get('/api/browse/:level', async (req, res) => {
+  const { level } = req.params;
+  const parentPath = req.query.parent || '';
+  
+  console.log(`[ROUTE] GET /api/browse/${level}`, { parent: parentPath });
+  
+  // Map browse levels to content types
+  let contentType;
+  let path = parentPath;
+  
+  switch (level) {
+    case 'libraries':
+      // Return the list of libraries
+      console.log('[ROUTE] Returning libraries list');
+      return res.json(libraries);
+    
+    case 'shows':
+      // Shows within a library
+      contentType = 'shows';
+      break;
+    
+    case 'seasons':
+      // Seasons within a show
+      contentType = 'seasons';
+      break;
+    
+    case 'episodes':
+      // Episodes within a season
+      contentType = 'episodes';
+      break;
+    
+    default:
+      return res.status(400).json({ error: `Invalid browse level: ${level}` });
+  }
+  
+  // Forward to the content endpoint
+  req.params.type = contentType;
+  req.url = `/api/content/${contentType}?path=${encodeURIComponent(path)}`;
+  app.handle(req, res);
+});
+
+console.log('[ROUTE] Registered hierarchical browsing route: GET /api/browse/:level');
 
 // POST /api/match
 app.post('/api/match', async (req, res) => {
@@ -335,12 +384,11 @@ app.post('/api/match', async (req, res) => {
     // Create a promise to handle the async process
     const matchPromise = new Promise((resolve, reject) => {
       // Build command to run the Python script with the correct arguments
-      // The script expects the file path as a positional argument
-      // Always use the default threshold (0.90) and max-stills=1
+      // Process 2 stills to find the best match between them
       const process = spawn('python3', [
         clipMatcherPath,
         episodePath,
-        '--max-stills', '1'
+        '--max-stills', '2'
         // Use default threshold (0.90) which is set in the script
         // Not using --cpu flag to ensure GPU is used if available
       ]);
@@ -403,6 +451,13 @@ app.post('/api/match', async (req, res) => {
               verificationPath = verificationLine.replace('Verification images saved to:', '').trim();
             }
             
+            // Extract best matching still number
+            let bestMatchingStill = '';
+            const bestStillLine = lines.find(line => line.includes('Best matching still:'));
+            if (bestStillLine) {
+              bestMatchingStill = bestStillLine.replace('Best matching still:', '').trim();
+            }
+            
             resolve({
               success: true,
               verified: isVerified,
@@ -410,6 +465,7 @@ app.post('/api/match', async (req, res) => {
               episode: episode,
               processingTime: processingTime,
               verificationPath: verificationPath,
+              bestStill: bestMatchingStill,
               usingGPU: stdoutData.includes('Using device: cuda')
             });
           } catch (error) {

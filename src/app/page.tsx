@@ -16,9 +16,11 @@ interface Show {
 }
 
 interface Episode {
-  file: string;
+  filename: string;
   path: string;
-  season: string;
+  season: number;
+  episode: number;
+  name: string;
 }
 
 export default function Home() {
@@ -31,7 +33,7 @@ export default function Home() {
 
   const fetchLibraries = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/libraries');
+      const response = await fetch('http://localhost:5000/api/browse/libraries');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -52,7 +54,7 @@ export default function Home() {
     setSelectedLibrary(library);
     try {
       const pathWithoutLeadingSlash = library.path.replace(/^\//, '');
-      const response = await fetch(`http://localhost:5000/api/shows?path=${encodeURIComponent(pathWithoutLeadingSlash)}`);
+      const response = await fetch(`http://localhost:5000/api/browse/shows?parent=${encodeURIComponent(pathWithoutLeadingSlash)}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -69,13 +71,36 @@ export default function Home() {
     setSelectedShow(show);
     try {
       const pathWithoutLeadingSlash = show.path.replace(/^\//, '');
-      const response = await fetch(`http://localhost:5000/api/episodes?path=${encodeURIComponent(pathWithoutLeadingSlash)}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // First get seasons
+      const seasonsResponse = await fetch(`http://localhost:5000/api/browse/seasons?parent=${encodeURIComponent(pathWithoutLeadingSlash)}`);
+      if (!seasonsResponse.ok) {
+        throw new Error(`HTTP error! status: ${seasonsResponse.status}`);
       }
-      const data = await response.json();
-      setEpisodes(data);
-      setError(null);
+      
+      const seasons = await seasonsResponse.json();
+      
+      // If we have seasons, get episodes from each season
+      if (seasons.length > 0) {
+        let allEpisodes: Episode[] = [];
+        
+        // For simplicity, just get episodes from the first season
+        // In a more advanced implementation, you might want to get episodes from all seasons
+        const firstSeason = seasons[0];
+        const seasonPath = firstSeason.path.replace(/^\//, '');
+        
+        const episodesResponse = await fetch(`http://localhost:5000/api/browse/episodes?parent=${encodeURIComponent(seasonPath)}`);
+        if (!episodesResponse.ok) {
+          throw new Error(`HTTP error! status: ${episodesResponse.status}`);
+        }
+        
+        const seasonEpisodes = await episodesResponse.json();
+        allEpisodes = [...allEpisodes, ...seasonEpisodes];
+        
+        setEpisodes(allEpisodes);
+        setError(null);
+      } else {
+        setEpisodes([]);
+      }
     } catch (error) {
       console.error('Error fetching episodes:', error);
       setError('Failed to fetch episodes. Please check if the show path is correct.');
