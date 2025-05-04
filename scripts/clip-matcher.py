@@ -38,7 +38,7 @@ TEMP_DIR = 'temp'
 VERIFY_DIR = 'verification'
 
 # Frame extraction rate (1 frame per second)
-FRAME_RATE = 1.5
+FRAME_RATE = 2
 
 def search_tmdb_for_show(show_name, year=None):
     """Search TMDB for a show by name and optionally year."""
@@ -364,8 +364,8 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
         # Initialize CLIP model
         print("Loading CLIP model...")
         model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-        processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", use_fast=False)
-        print("Using standard image processor (not fast)")
+        processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", use_fast=True)
+        print("Using fast image processor")
         
         # Process the specified number of stills
         max_similarity = 0.0
