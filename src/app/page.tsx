@@ -96,6 +96,40 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch latest match for real-time updates
+  const fetchLatestMatch = async () => {
+    try {
+      // Use the /api/latest-match endpoint for the most up-to-date image
+      const response = await fetch('http://localhost:5000/api/latest-match'); 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      // Update latestScan state if a match is found
+      if (data.found) {
+        setLatestScan({
+          id: -1, // Placeholder ID as this doesn't come from history
+          library_id: -1, // Placeholder
+          file_path: data.file_path || '',
+          file_modified_time: data.last_scanned_time || Date.now(), // Approximate
+          last_scanned_time: data.last_scanned_time || Date.now(),
+          verification_image_path: data.verification_image_path,
+          match_score: data.match_score || 0,
+          is_verified: data.is_verified || false,
+          episode_info: data.episode_info || ''
+        });
+      } else {
+        // If no match found by the specific endpoint, maybe keep the last known from history?
+        // Or set to null if you prefer:
+        // setLatestScan(null);
+      }
+    } catch (error) {
+      console.error('Error fetching latest match:', error);
+      // Don't necessarily set a global error here, as it's for background polling
+    }
+  };
+
   // Start a scan
   const startScan = async () => {
     try {
@@ -136,16 +170,65 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    let scanIntervalId: NodeJS.Timeout | null = null;
+    let matchIntervalId: NodeJS.Timeout | null = null;
+
     // Initial data fetch
     fetchScanStatus();
-    fetchLatestScan();
-    
-    // Set up polling if a scan is in progress
-    if (scanStatus.isScanning) {
-      const intervalId = setInterval(fetchScanStatus, 2000);
-      return () => clearInterval(intervalId);
-    }
-  }, [scanStatus.isScanning]);
+    fetchLatestMatch(); // Fetch latest match on initial load
+
+    // Function to handle polling
+    const startPolling = () => {
+      // Poll for scan status
+      scanIntervalId = setInterval(async () => {
+        try {
+          const statusResponse = await fetch('http://localhost:5000/api/scan/status');
+          const statusData = await statusResponse.json();
+          setScanStatus(statusData);
+
+          // If scan finishes, clear this interval
+          if (!statusData.isScanning) {
+            if (scanIntervalId) clearInterval(scanIntervalId);
+            scanIntervalId = null;
+            // Fetch final history once scan is done (optional, fetchLatestMatch handles real-time)
+            // fetchLatestScan(); 
+          }
+        } catch (error) {
+          console.error('Error polling scan status:', error);
+          if (scanIntervalId) clearInterval(scanIntervalId); // Stop polling on error
+          scanIntervalId = null;
+        }
+      }, 2000); // Poll scan status every 2 seconds
+
+      // Poll for latest match updates independently
+      matchIntervalId = setInterval(fetchLatestMatch, 3000); // Poll latest match every 3 seconds
+    };
+
+    // Start polling immediately if a scan is already running based on initial fetch
+    fetch('http://localhost:5000/api/scan/status')
+      .then(res => res.json())
+      .then(initialStatus => {
+        setScanStatus(initialStatus); // Ensure state is up-to-date
+        if (initialStatus.isScanning) {
+          startPolling();
+        } else {
+          // If not scanning initially, still poll for latest match
+          matchIntervalId = setInterval(fetchLatestMatch, 3000);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching initial scan status:', error);
+        setError('Failed to fetch initial scan status.');
+         // Still set up match polling even if status check fails initially
+        matchIntervalId = setInterval(fetchLatestMatch, 3000);
+      });
+
+    // Clean up intervals on component unmount
+    return () => {
+      if (scanIntervalId) clearInterval(scanIntervalId);
+      if (matchIntervalId) clearInterval(matchIntervalId);
+    };
+  }, []); // Run only once on mount
 
   // Calculate progress percentage
   const progressPercentage = scanStatus.totalFiles > 0 
@@ -283,12 +366,14 @@ export default function Dashboard() {
             </div>
             
             <div className="bg-black rounded overflow-hidden">
-              <Image 
-                src={latestScan.verification_image_path} 
-                alt="Verification" 
+              <Image
+                key={latestScan.last_scanned_time}
+                src={`${latestScan.verification_image_path}?t=${latestScan.last_scanned_time}`}
+                alt="Verification"
                 className="w-full h-auto"
                 width={500}
                 height={300}
+                unoptimized
               />
             </div>
           </div>

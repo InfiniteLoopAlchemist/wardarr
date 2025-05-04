@@ -263,13 +263,35 @@ const viewerHtml = `
             border-radius: 4px;
             color: #aaa;
         }
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            margin-left: 15px;
+        }
+        .auto-refresh input {
+            margin-right: 5px;
+        }
+        .auto-refresh label {
+            font-size: 14px;
+            color: #ddd;
+        }
+        .refresh-controls {
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Verification Image Viewer</h1>
-            <button id="refreshBtn" class="refresh-btn">Refresh</button>
+            <div class="refresh-controls">
+                <div class="auto-refresh">
+                    <input type="checkbox" id="autoRefresh" checked>
+                    <label for="autoRefresh">Auto refresh</label>
+                </div>
+                <button id="refreshBtn" class="refresh-btn">Refresh Now</button>
+            </div>
         </div>
         
         <div class="verification-image" id="latestVerification">
@@ -285,6 +307,9 @@ const viewerHtml = `
 
     <script>
         let lastImageTimestamp = 0;
+        let currentImagePath = '';
+        let autoRefreshInterval;
+        let isAutoRefreshEnabled = true;
         
         function updateRefreshTime() {
             const now = new Date();
@@ -300,17 +325,11 @@ const viewerHtml = `
                 return;
             }
             
-            // Don't update if we have the same image (unless forced)
-            if (data.timestamp === lastImageTimestamp && arguments.length < 2) {
-                return;
-            }
-            
-            lastImageTimestamp = data.timestamp;
-            
-            const imagePath = data.verification_image_path + '?t=' + Date.now(); // Cache busting
+            // Force update with every call now, don't try to be clever with caching
+            const uniqueImagePath = data.verification_image_path + '?nocache=' + Date.now(); 
             
             let html = '<div class="image-container">';
-            html += '<img src="' + imagePath + '" alt="Verification image">';
+            html += '<img src="' + uniqueImagePath + '" alt="Verification image" onload="this.style.opacity=1" onerror="this.src=\'' + uniqueImagePath + '\'" style="opacity:0.95">';
             html += '</div>';
             html += '<div class="metadata">';
             html += '<div class="label">Status:</div>';
@@ -323,6 +342,8 @@ const viewerHtml = `
             html += '<div class="value">' + (data.episode_info || 'Unknown') + '</div>';
             html += '<div class="label">File:</div>';
             html += '<div class="value">' + (data.file_path || 'Unknown') + '</div>';
+            html += '<div class="label">Updated:</div>';
+            html += '<div class="value">' + new Date().toLocaleTimeString() + '</div>';
             html += '</div>';
             
             container.innerHTML = html;
@@ -351,8 +372,9 @@ const viewerHtml = `
                     data.processedFiles + '/' + data.totalFiles + ')</div>' +
                     '<div class="status">Current file: ' + currentFile + '</div>';
                 
-                // If scan has latest match, display it
+                // Always force display of the latest match during scanning
                 if (data.latestMatch) {
+                    // Always force update during scanning
                     displayVerificationImage({
                         found: true,
                         verification_image_path: data.latestMatch.imagePath,
@@ -360,14 +382,15 @@ const viewerHtml = `
                         is_verified: data.latestMatch.isVerified,
                         episode_info: data.latestMatch.episodeInfo,
                         file_path: data.latestMatch.path,
-                        timestamp: data.latestMatch.timestamp
+                        timestamp: Date.now() // Force timestamp to be current
                     }, true);
                 }
             } else {
                 container.innerHTML = '<div class="status">No scan in progress</div>';
                 
-                // If scan has latest match, display it
+                // Always force display of the latest match
                 if (data.latestMatch) {
+                    // Always force update
                     displayVerificationImage({
                         found: true,
                         verification_image_path: data.latestMatch.imagePath,
@@ -375,14 +398,14 @@ const viewerHtml = `
                         is_verified: data.latestMatch.isVerified,
                         episode_info: data.latestMatch.episodeInfo,
                         file_path: data.latestMatch.path,
-                        timestamp: data.latestMatch.timestamp
+                        timestamp: Date.now() // Force timestamp to be current
                     }, true);
                 }
             }
         }
         
         function fetchLatestVerification() {
-            fetch('/api/latest-verification')
+            fetch('/api/latest-match?t=' + Date.now())
                 .then(response => response.json())
                 .then(data => {
                     displayVerificationImage(data);
@@ -393,14 +416,14 @@ const viewerHtml = `
         }
         
         function fetchScanStatus() {
-            fetch('/api/scan/status')
+            fetch('/api/scan/status?t=' + Date.now())
                 .then(response => response.json())
                 .then(data => {
                     updateScanStatus(data);
                     
-                    // Auto-refresh if scan is in progress
-                    if (data.isScanning) {
-                        setTimeout(fetchScanStatus, 2000);
+                    // Auto-refresh if scan is in progress (more frequently)
+                    if (data.isScanning && isAutoRefreshEnabled) {
+                        setTimeout(fetchScanStatus, 1000); // Poll every second during active scan
                     }
                 })
                 .catch(error => {
@@ -408,21 +431,44 @@ const viewerHtml = `
                 });
         }
         
+        function startAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+            
+            // Set to refresh every 3 seconds
+            autoRefreshInterval = setInterval(function() {
+                if (isAutoRefreshEnabled) {
+                    fetchScanStatus();
+                    fetchLatestVerification();
+                }
+            }, 3000);
+        }
+        
+        // Handle auto-refresh checkbox
+        document.getElementById('autoRefresh').addEventListener('change', function(e) {
+            isAutoRefreshEnabled = e.target.checked;
+            
+            if (isAutoRefreshEnabled) {
+                startAutoRefresh();
+                fetchScanStatus(); // Immediate refresh when enabled
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        });
+        
         // Initial load
         fetchLatestVerification();
         fetchScanStatus();
         updateRefreshTime();
+        startAutoRefresh();
         
         // Set up refresh button
         document.getElementById('refreshBtn').addEventListener('click', function() {
             fetchLatestVerification();
             fetchScanStatus();
+            updateRefreshTime();
         });
-        
-        // Auto-refresh every 10 seconds
-        setInterval(function() {
-            fetchScanStatus();
-        }, 10000);
     </script>
 </body>
 </html>
@@ -438,7 +484,9 @@ app.use(express.static(publicDir));
 app.use('/matches', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET');
-  res.header('Cache-Control', 'no-cache');
+  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.header('Pragma', 'no-cache');
+  res.header('Expires', '0');
   next();
 });
 
@@ -937,6 +985,11 @@ app.get('/api/latest-verification', (req, res) => {
     console.log(`[ROUTE] Latest verification file: ${latestFile ? latestFile.file_path : 'None'}`);
     
     if (!latestFile) {
+      // Add no-cache headers
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
       return res.json({ found: false });
     }
     
@@ -951,6 +1004,11 @@ app.get('/api/latest-verification', (req, res) => {
       console.log(`[ROUTE] Latest verification image: ${imagePath}`);
     }
     
+    // Add no-cache headers
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
     res.json({
       found: true,
       file_path: latestFile.file_path,
@@ -958,7 +1016,8 @@ app.get('/api/latest-verification', (req, res) => {
       match_score: latestFile.match_score,
       is_verified: latestFile.is_verified === 1,
       episode_info: latestFile.episode_info,
-      last_scanned_time: latestFile.last_scanned_time
+      last_scanned_time: latestFile.last_scanned_time,
+      timestamp: Date.now()
     });
   } catch (error) {
     console.error('[ERROR] Failed to get latest verification:', error);
@@ -966,6 +1025,76 @@ app.get('/api/latest-verification', (req, res) => {
   }
 });
 console.log('[ROUTE] Registered route: GET /api/latest-verification');
+
+// GET /api/latest-match - Get latest match image in real-time
+app.get('/api/latest-match', (req, res) => {
+  console.log('[ROUTE] GET /api/latest-match (real-time polling)');
+  
+  // Set cache-busting headers
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
+  // First check if we have a latest match in the scan status
+  if (scanStatus.latestMatch) {
+    console.log('[ROUTE] Returning real-time latest match from scan status');
+    
+    // Always update the timestamp to force browser refresh
+    scanStatus.latestMatch.timestamp = Date.now();
+    
+    // Ensure image path is properly formatted
+    let imagePath = scanStatus.latestMatch.imagePath;
+    if (imagePath && !imagePath.startsWith('/')) {
+      imagePath = '/' + imagePath;
+    }
+    
+    return res.json({
+      found: true,
+      file_path: scanStatus.latestMatch.path,
+      verification_image_path: imagePath,
+      match_score: scanStatus.latestMatch.matchScore,
+      is_verified: scanStatus.latestMatch.isVerified === true || scanStatus.latestMatch.isVerified === 1,
+      episode_info: scanStatus.latestMatch.episodeInfo,
+      timestamp: Date.now(),
+      source: 'scan_status'
+    });
+  }
+  
+  // If not in scan status, get from database
+  try {
+    const latestFile = getLatestScannedFile.get();
+    
+    if (!latestFile) {
+      return res.json({ found: false });
+    }
+    
+    // Get image path and ensure it's properly formatted
+    let imagePath = null;
+    if (latestFile.verification_image_path) {
+      imagePath = latestFile.verification_image_path;
+      if (!imagePath.startsWith('/')) {
+        imagePath = '/' + imagePath;
+      }
+    }
+    
+    console.log(`[ROUTE] Returning latest match from database: ${latestFile.file_path}`);
+    return res.json({
+      found: true,
+      file_path: latestFile.file_path,
+      verification_image_path: imagePath,
+      match_score: latestFile.match_score,
+      is_verified: latestFile.is_verified === 1,
+      episode_info: latestFile.episode_info,
+      last_scanned_time: latestFile.last_scanned_time,
+      timestamp: Date.now(),
+      source: 'database'
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to get latest match:', error);
+    res.status(500).json({ error: 'Failed to get latest match information' });
+  }
+});
+console.log('[ROUTE] Registered route: GET /api/latest-match');
 
 // Global variable to track scan status
 let scanStatus = {
@@ -1016,7 +1145,7 @@ const copyVerificationImage = async (sourcePath, episodeFilePath) => {
   if (!sourcePath) return null;
   
   try {
-    // Get a unique filename based on the episode file
+    // Get a unique filename based on the episode file and current timestamp
     const episodeFileName = path.basename(episodeFilePath || 'unknown');
     const timestamp = Date.now();
     const uniqueFilename = `match_${timestamp}_${episodeFileName.replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
@@ -1042,7 +1171,10 @@ const copyVerificationImage = async (sourcePath, episodeFilePath) => {
     console.log(`[IMAGE] Copied verification image to: ${destPath}`);
     
     // Return the relative path for storing in the database
-    return `/matches/${uniqueFilename}`;
+    // Ensure the path starts with a forward slash
+    const relativePath = `/matches/${uniqueFilename}`;
+    console.log(`[IMAGE] Using relative path: ${relativePath}`);
+    return relativePath;
   } catch (error) {
     console.error(`[ERROR] Failed to copy verification image:`, error);
     return null;
@@ -1111,7 +1243,7 @@ app.get('/api/scan/status', (req, res) => {
           matchScore: latestFile.match_score,
           isVerified: latestFile.is_verified === 1,
           episodeInfo: latestFile.episode_info,
-          timestamp: Date.now() // Add timestamp to force a browser cache refresh
+          timestamp: Date.now() // Always use fresh timestamp
         };
       }
     } catch (error) {
@@ -1121,6 +1253,11 @@ app.get('/api/scan/status', (req, res) => {
     // Always add a fresh timestamp to force browser to reload the image
     scanStatus.latestMatch.timestamp = Date.now();
   }
+  
+  // Add no-cache headers to force browser to get fresh data
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   
   res.json(scanStatus);
 });
@@ -1337,6 +1474,9 @@ async function processScan(libraries) {
               timestamp: Date.now() // Add a timestamp to force browser cache refresh
             };
             console.log(`[MATCH] Updated latest successful match: ${file.path} -> ${verificationImagePath}`);
+            
+            // Update the scanStatus with the latest match immediately
+            scanStatus.latestMatch = latestSuccessfulMatch;
           }
           
           // Ensure all values are valid SQLite types
