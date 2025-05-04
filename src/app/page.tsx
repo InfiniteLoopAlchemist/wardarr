@@ -23,11 +23,18 @@ interface Episode {
   name: string;
 }
 
+interface Season {
+  name: string;
+  path: string;
+}
+
 export default function Home() {
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [selectedLibrary, setSelectedLibrary] = useState<Library | null>(null);
   const [shows, setShows] = useState<Show[]>([]);
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,41 +76,50 @@ export default function Home() {
 
   const handleShowSelect = async (show: Show) => {
     setSelectedShow(show);
+    setSelectedSeason(null);
+    setEpisodes([]);
+    
     try {
       const pathWithoutLeadingSlash = show.path.replace(/^\//, '');
-      // First get seasons
+      // Get seasons for the selected show
       const seasonsResponse = await fetch(`http://localhost:5000/api/browse/seasons?parent=${encodeURIComponent(pathWithoutLeadingSlash)}`);
       if (!seasonsResponse.ok) {
         throw new Error(`HTTP error! status: ${seasonsResponse.status}`);
       }
       
-      const seasons = await seasonsResponse.json();
+      const seasonsData = await seasonsResponse.json();
+      setSeasons(seasonsData);
       
-      // If we have seasons, get episodes from each season
-      if (seasons.length > 0) {
-        let allEpisodes: Episode[] = [];
-        
-        // For simplicity, just get episodes from the first season
-        // In a more advanced implementation, you might want to get episodes from all seasons
-        const firstSeason = seasons[0];
-        const seasonPath = firstSeason.path.replace(/^\//, '');
-        
-        const episodesResponse = await fetch(`http://localhost:5000/api/browse/episodes?parent=${encodeURIComponent(seasonPath)}`);
-        if (!episodesResponse.ok) {
-          throw new Error(`HTTP error! status: ${episodesResponse.status}`);
-        }
-        
-        const seasonEpisodes = await episodesResponse.json();
-        allEpisodes = [...allEpisodes, ...seasonEpisodes];
-        
-        setEpisodes(allEpisodes);
-        setError(null);
+      // If we have seasons, select the first one by default
+      if (seasonsData.length > 0) {
+        handleSeasonSelect(seasonsData[0]);
       } else {
-        setEpisodes([]);
+        setSeasons([]);
       }
     } catch (error) {
       console.error('Error fetching episodes:', error);
       setError('Failed to fetch episodes. Please check if the show path is correct.');
+    }
+  };
+
+  const handleSeasonSelect = async (season: Season) => {
+    setSelectedSeason(season);
+    setEpisodes([]);
+    
+    try {
+      const seasonPath = season.path.replace(/^\//, '');
+      
+      const episodesResponse = await fetch(`http://localhost:5000/api/browse/episodes?parent=${encodeURIComponent(seasonPath)}`);
+      if (!episodesResponse.ok) {
+        throw new Error(`HTTP error! status: ${episodesResponse.status}`);
+      }
+      
+      const seasonEpisodes = await episodesResponse.json();
+      setEpisodes(seasonEpisodes);
+      setError(null);
+    } catch (error) {
+      console.error('Error fetching episodes:', error);
+      setError('Failed to fetch episodes. Please check if the season path is correct.');
     }
   };
 
@@ -133,10 +149,29 @@ export default function Home() {
               onShowSelect={handleShowSelect}
             />
           )}
+          
+          {selectedShow && seasons.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow-md mt-8">
+              <h2 className="text-xl font-semibold mb-4 text-gray-800">Seasons</h2>
+              <div className="space-y-3">
+                {seasons.map((season) => (
+                  <div
+                    key={season.path}
+                    onClick={() => handleSeasonSelect(season)}
+                    className={`border rounded p-3 hover:bg-gray-50 cursor-pointer ${
+                      selectedSeason?.path === season.path ? 'bg-blue-50 border-blue-300' : ''
+                    }`}
+                  >
+                    <div className="font-medium text-blue-600">{season.name}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="col-span-1">
-          {selectedShow && (
+          {selectedSeason && (
             <EpisodeSelector 
               episodes={episodes}
             />
