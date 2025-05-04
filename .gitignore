@@ -12,7 +12,8 @@
 /venv
 .venv/
 .venv/lib64/
-
+public/matches
+public/verification
 /ib
 # testing
 /coverage
