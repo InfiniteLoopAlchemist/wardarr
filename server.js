@@ -383,8 +383,7 @@ app.post('/api/match', async (req, res) => {
     
     // Create a promise to handle the async process
     const matchPromise = new Promise((resolve, reject) => {
-      // Build command to run the Python script with the correct arguments
-      // Process 2 stills to find the best match between them
+      // Build command to run the Python script directly without using the wrapper
       const process = spawn('python3', [
         clipMatcherPath,
         episodePath,
