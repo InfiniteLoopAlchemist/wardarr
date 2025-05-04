@@ -854,8 +854,7 @@ app.post('/api/match', async (req, res) => {
         episodePath,
         '--max-stills', '5',
         '--threshold', '0.95',
-        '--early-stop', '0.98',
-        '--strict'
+        '--early-stop', '0.98'
       ]);
       
       let stdoutData = '';
@@ -1277,8 +1276,7 @@ async function runClipMatcher(filePath) {
       filePath,
       '--max-stills', '5',
       '--threshold', '0.95',
-      '--early-stop', '0.98',
-      '--strict'
+      '--early-stop', '0.98'
     ]);
     
     let stdoutData = '';
