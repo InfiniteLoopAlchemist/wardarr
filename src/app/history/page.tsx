@@ -20,30 +20,40 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [filter, setFilter] = useState<'all' | 'verified' | 'unverified'>('all');
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('http://localhost:5000/api/history');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        
-        // Sort by scan time (newest first)
-        const sortedData = [...data].sort((a, b) => b.last_scanned_time - a.last_scanned_time);
-        setScannedFiles(sortedData);
-        setError(null);
-      } catch (error) {
-        console.error('Error fetching scan history:', error);
-        setError('Failed to fetch scan history. Please check if the backend server is running.');
-      } finally {
-        setLoading(false);
+  const fetchHistory = async () => {
+    try {
+      // Don't set loading to true on interval fetches, only initial
+      // setLoading(true); 
+      const response = await fetch('http://localhost:5000/api/history');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    };
+      const data = await response.json();
+      
+      // Sort by scan time (newest first)
+      const sortedData = [...data].sort((a, b) => b.last_scanned_time - a.last_scanned_time);
+      setScannedFiles(sortedData);
+      setError(null);
+    } catch (error) {
+      console.error('Error fetching scan history:', error);
+      setError('Failed to fetch scan history. Please check if the backend server is running.');
+    } finally {
+      // Ensure loading is set to false after the first fetch
+      setLoading(false); 
+    }
+  };
 
+  useEffect(() => {
+    // Initial fetch
+    setLoading(true); // Set loading true only for the initial fetch
     fetchHistory();
-  }, []);
+
+    // Set up polling interval
+    const intervalId = setInterval(fetchHistory, 5000); // Fetch every 5 seconds
+
+    // Clean up interval on component unmount
+    return () => clearInterval(intervalId);
+  }, []); // Run only once on mount to set up polling
 
   // Filter scanned files based on selected filter
   const filteredFiles = scannedFiles.filter(file => {
@@ -105,7 +115,7 @@ export default function HistoryPage() {
               {file.verification_image_path ? (
                 <div className="relative">
                   <img 
-                    src={file.verification_image_path} 
+                    src={`${file.verification_image_path}?t=${file.last_scanned_time}`} 
                     alt="Verification" 
                     className="w-full h-auto"
                   />
