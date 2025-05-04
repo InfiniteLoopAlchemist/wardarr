@@ -25,8 +25,11 @@ TMDB_API_KEY = '44027419f85a28c4be535275eba62ca7'
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
-# Similarity threshold (0.40 default is stricter than before)
-SIMILARITY_THRESHOLD = 0.90
+# Similarity threshold (0.96 default is stricter)
+SIMILARITY_THRESHOLD = 0.96
+
+# Early stopping threshold (stop processing more stills if a match exceeds this)
+EARLY_STOP_THRESHOLD = 0.98
 
 # Temp directory
 TEMP_DIR = 'temp'
@@ -309,7 +312,7 @@ def create_comparison_image(still_path, frame_path, output_path, similarity, epi
         traceback.print_exc()
         return None
 
-def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2, strict_mode=False):
+def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD):
     """Main function to process a media file."""
     try:
         import time
@@ -317,6 +320,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
         
         print(f"Processing file: {media_path}")
         print(f"Using similarity threshold: {threshold}")
+        print(f"Early stopping threshold: {early_stop_threshold}")
         print(f"Maximum stills to process: {max_stills}")
         print(f"Strict mode: {strict_mode}")
         
@@ -424,6 +428,17 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
                         best_match_still = still_index + 1
                         best_match_still_path = still_path
                         print(f"New overall best match: {similarity:.3f} (frame: {os.path.basename(frame_path)}, still: #{still_index + 1})")
+                        
+                        # Early stopping if we hit the early stop threshold
+                        if similarity >= early_stop_threshold:
+                            print(f"Early stopping at similarity {similarity:.3f} (≥ {early_stop_threshold})")
+                            # Break out of frame processing loop
+                            break
+                
+                # Early stopping after batch if we hit the threshold
+                if max_similarity >= early_stop_threshold:
+                    print(f"Early stopping processing of frames at similarity {max_similarity:.3f}")
+                    break
             
             # Store match for this still for strict mode
             still_matches.append({
@@ -437,6 +452,11 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
             if still_best_match:
                 comparison_path = os.path.join(verify_path, f"still_{still_index + 1}_match.jpg")
                 create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info)
+            
+            # Early stopping if we hit the early stop threshold
+            if max_similarity >= early_stop_threshold:
+                print(f"Early stopping at still #{still_index + 1} - found match with similarity {max_similarity:.3f} (≥ {early_stop_threshold})")
+                break
         
         # Determine if this is a match based on mode
         if strict_mode:
@@ -490,6 +510,8 @@ def main():
     parser.add_argument('media_path', help='Path to the media file')
     parser.add_argument('--threshold', type=float, default=SIMILARITY_THRESHOLD,
                         help=f'Similarity threshold (default: {SIMILARITY_THRESHOLD})')
+    parser.add_argument('--early-stop', type=float, default=EARLY_STOP_THRESHOLD,
+                        help=f'Early stopping threshold (default: {EARLY_STOP_THRESHOLD})')
     parser.add_argument('--max-stills', type=int, default=5,
                         help='Maximum number of stills to use from TMDB')
     parser.add_argument('--strict', action='store_true',
@@ -508,7 +530,7 @@ def main():
     
     # Process the media file with error handling
     try:
-        is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict)
+        is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict, args.early_stop)
         return 0 if is_match else 1
     except Exception as e:
         print(f"ERROR: Failed to process media file: {str(e)}")

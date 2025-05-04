@@ -1,0 +1,264 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Image Viewer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .verification-image {
+            background-color: #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .image-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .image-container img {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 4px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+        .metadata {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .label {
+            font-weight: bold;
+            color: #aaa;
+        }
+        .value {
+            color: #fff;
+            word-break: break-all;
+        }
+        .refresh-btn {
+            background-color: #4a89dc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-btn:hover {
+            background-color: #5a99ec;
+        }
+        .status {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+        .verified {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .unverified {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .refresh-time {
+            font-size: 12px;
+            color: #777;
+            text-align: right;
+            margin-top: 10px;
+        }
+        .no-image {
+            text-align: center;
+            padding: 40px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Verification Image Viewer</h1>
+            <button id="refreshBtn" class="refresh-btn">Refresh</button>
+        </div>
+        
+        <div class="verification-image" id="latestVerification">
+            <div class="no-image">Loading verification image...</div>
+        </div>
+
+        <div class="scan-status" id="scanStatus">
+            <div class="status">Checking scan status...</div>
+        </div>
+        
+        <div class="refresh-time" id="refreshTime"></div>
+    </div>
+
+    <script>
+        let lastImageTimestamp = 0;
+        
+        function updateRefreshTime() {
+            const now = new Date();
+            document.getElementById('refreshTime').textContent = 
+                'Last updated: ' + now.toLocaleTimeString();
+        }
+        
+        function displayVerificationImage(data) {
+            const container = document.getElementById('latestVerification');
+            
+            if (!data || !data.found || !data.verification_image_path) {
+                container.innerHTML = '<div class="no-image">No verification image available</div>';
+                return;
+            }
+            
+            // Don't update if we have the same image (unless forced)
+            if (data.timestamp === lastImageTimestamp && arguments.length < 2) {
+                return;
+            }
+            
+            lastImageTimestamp = data.timestamp;
+            
+            const imagePath = data.verification_image_path + '?t=' + Date.now(); // Cache busting
+            
+            let html = '<div class="image-container">';
+            html += '<img src="' + imagePath + '" alt="Verification image">';
+            html += '</div>';
+            html += '<div class="metadata">';
+            html += '<div class="label">Status:</div>';
+            html += '<div class="value ' + (data.is_verified ? 'verified' : 'unverified') + '">';
+            html += data.is_verified ? '✓ VERIFIED' : '✗ NOT VERIFIED';
+            html += '</div>';
+            html += '<div class="label">Match Score:</div>';
+            html += '<div class="value">' + (data.match_score * 100).toFixed(1) + '%</div>';
+            html += '<div class="label">Episode:</div>';
+            html += '<div class="value">' + (data.episode_info || 'Unknown') + '</div>';
+            html += '<div class="label">File:</div>';
+            html += '<div class="value">' + (data.file_path || 'Unknown') + '</div>';
+            html += '</div>';
+            
+            container.innerHTML = html;
+            updateRefreshTime();
+        }
+        
+        function updateScanStatus(data) {
+            const container = document.getElementById('scanStatus');
+            
+            if (!data) {
+                container.innerHTML = '<div class="status">Unable to fetch scan status</div>';
+                return;
+            }
+            
+            if (data.isScanning) {
+                const progress = data.totalFiles > 0 
+                    ? (data.processedFiles / data.totalFiles * 100).toFixed(1) 
+                    : 0;
+                    
+                const currentFile = data.currentFile 
+                    ? data.currentFile.split('/').pop() 
+                    : 'Unknown';
+                
+                container.innerHTML = 
+                    '<div class="status">Scanning in progress: ' + progress + '% (' + 
+                    data.processedFiles + '/' + data.totalFiles + ')</div>' +
+                    '<div class="status">Current file: ' + currentFile + '</div>';
+                
+                // If scan has latest match, display it
+                if (data.latestMatch) {
+                    displayVerificationImage({
+                        found: true,
+                        verification_image_path: data.latestMatch.imagePath,
+                        match_score: data.latestMatch.matchScore,
+                        is_verified: data.latestMatch.isVerified,
+                        episode_info: data.latestMatch.episodeInfo,
+                        file_path: data.latestMatch.path,
+                        timestamp: data.latestMatch.timestamp
+                    }, true);
+                }
+            } else {
+                container.innerHTML = '<div class="status">No scan in progress</div>';
+                
+                // If scan has latest match, display it
+                if (data.latestMatch) {
+                    displayVerificationImage({
+                        found: true,
+                        verification_image_path: data.latestMatch.imagePath,
+                        match_score: data.latestMatch.matchScore,
+                        is_verified: data.latestMatch.isVerified,
+                        episode_info: data.latestMatch.episodeInfo,
+                        file_path: data.latestMatch.path,
+                        timestamp: data.latestMatch.timestamp
+                    }, true);
+                }
+            }
+        }
+        
+        function fetchLatestVerification() {
+            fetch('/api/latest-verification')
+                .then(response => response.json())
+                .then(data => {
+                    displayVerificationImage(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching latest verification:', error);
+                });
+        }
+        
+        function fetchScanStatus() {
+            fetch('/api/scan/status')
+                .then(response => response.json())
+                .then(data => {
+                    updateScanStatus(data);
+                    
+                    // Auto-refresh if scan is in progress
+                    if (data.isScanning) {
+                        setTimeout(fetchScanStatus, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching scan status:', error);
+                });
+        }
+        
+        // Initial load
+        fetchLatestVerification();
+        fetchScanStatus();
+        updateRefreshTime();
+        
+        // Set up refresh button
+        document.getElementById('refreshBtn').addEventListener('click', function() {
+            fetchLatestVerification();
+            fetchScanStatus();
+        });
+        
+        // Auto-refresh every 10 seconds
+        setInterval(function() {
+            fetchScanStatus();
+        }, 10000);
+    </script>
+</body>
+</html>

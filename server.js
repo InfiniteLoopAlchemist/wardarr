@@ -15,6 +15,16 @@ const __dirname = path.dirname(__filename);
 // Initialize SQLite database
 const db = new Database('libraries.db', { verbose: console.log });
 
+// Update the clip-matcher.py default threshold
+const clipMatcherThreshold = 0.96;
+const clipMatcherEarlyStop = 0.98;
+const clipMatcherDefaultPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
+let clipMatcherContent = fs.readFileSync(clipMatcherDefaultPath, 'utf8');
+clipMatcherContent = clipMatcherContent.replace(/SIMILARITY_THRESHOLD = 0\.\d+/, `SIMILARITY_THRESHOLD = ${clipMatcherThreshold}`);
+clipMatcherContent = clipMatcherContent.replace(/EARLY_STOP_THRESHOLD = 0\.\d+/, `EARLY_STOP_THRESHOLD = ${clipMatcherEarlyStop}`);
+fs.writeFileSync(clipMatcherDefaultPath, clipMatcherContent);
+console.log(`[SERVER] Updated clip-matcher.py default threshold to ${clipMatcherThreshold} and early stop to ${clipMatcherEarlyStop}`);
+
 // Create libraries table if it doesn't exist
 db.exec(`
   CREATE TABLE IF NOT EXISTS libraries (
@@ -150,6 +160,278 @@ if (!fs.existsSync(matchesDir)) {
   fs.mkdirSync(matchesDir, { recursive: true });
   console.log(`[SERVER] Created matches directory: ${matchesDir}`);
 }
+
+// Write the viewer HTML file
+const viewerHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Image Viewer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .verification-image {
+            background-color: #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .image-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .image-container img {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 4px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+        .metadata {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .label {
+            font-weight: bold;
+            color: #aaa;
+        }
+        .value {
+            color: #fff;
+            word-break: break-all;
+        }
+        .refresh-btn {
+            background-color: #4a89dc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-btn:hover {
+            background-color: #5a99ec;
+        }
+        .status {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+        .verified {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .unverified {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .refresh-time {
+            font-size: 12px;
+            color: #777;
+            text-align: right;
+            margin-top: 10px;
+        }
+        .no-image {
+            text-align: center;
+            padding: 40px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Verification Image Viewer</h1>
+            <button id="refreshBtn" class="refresh-btn">Refresh</button>
+        </div>
+        
+        <div class="verification-image" id="latestVerification">
+            <div class="no-image">Loading verification image...</div>
+        </div>
+
+        <div class="scan-status" id="scanStatus">
+            <div class="status">Checking scan status...</div>
+        </div>
+        
+        <div class="refresh-time" id="refreshTime"></div>
+    </div>
+
+    <script>
+        let lastImageTimestamp = 0;
+        
+        function updateRefreshTime() {
+            const now = new Date();
+            document.getElementById('refreshTime').textContent = 
+                'Last updated: ' + now.toLocaleTimeString();
+        }
+        
+        function displayVerificationImage(data) {
+            const container = document.getElementById('latestVerification');
+            
+            if (!data || !data.found || !data.verification_image_path) {
+                container.innerHTML = '<div class="no-image">No verification image available</div>';
+                return;
+            }
+            
+            // Don't update if we have the same image (unless forced)
+            if (data.timestamp === lastImageTimestamp && arguments.length < 2) {
+                return;
+            }
+            
+            lastImageTimestamp = data.timestamp;
+            
+            const imagePath = data.verification_image_path + '?t=' + Date.now(); // Cache busting
+            
+            let html = '<div class="image-container">';
+            html += '<img src="' + imagePath + '" alt="Verification image">';
+            html += '</div>';
+            html += '<div class="metadata">';
+            html += '<div class="label">Status:</div>';
+            html += '<div class="value ' + (data.is_verified ? 'verified' : 'unverified') + '">';
+            html += data.is_verified ? '✓ VERIFIED' : '✗ NOT VERIFIED';
+            html += '</div>';
+            html += '<div class="label">Match Score:</div>';
+            html += '<div class="value">' + (data.match_score * 100).toFixed(1) + '%</div>';
+            html += '<div class="label">Episode:</div>';
+            html += '<div class="value">' + (data.episode_info || 'Unknown') + '</div>';
+            html += '<div class="label">File:</div>';
+            html += '<div class="value">' + (data.file_path || 'Unknown') + '</div>';
+            html += '</div>';
+            
+            container.innerHTML = html;
+            updateRefreshTime();
+        }
+        
+        function updateScanStatus(data) {
+            const container = document.getElementById('scanStatus');
+            
+            if (!data) {
+                container.innerHTML = '<div class="status">Unable to fetch scan status</div>';
+                return;
+            }
+            
+            if (data.isScanning) {
+                const progress = data.totalFiles > 0 
+                    ? (data.processedFiles / data.totalFiles * 100).toFixed(1) 
+                    : 0;
+                    
+                const currentFile = data.currentFile 
+                    ? data.currentFile.split('/').pop() 
+                    : 'Unknown';
+                
+                container.innerHTML = 
+                    '<div class="status">Scanning in progress: ' + progress + '% (' + 
+                    data.processedFiles + '/' + data.totalFiles + ')</div>' +
+                    '<div class="status">Current file: ' + currentFile + '</div>';
+                
+                // If scan has latest match, display it
+                if (data.latestMatch) {
+                    displayVerificationImage({
+                        found: true,
+                        verification_image_path: data.latestMatch.imagePath,
+                        match_score: data.latestMatch.matchScore,
+                        is_verified: data.latestMatch.isVerified,
+                        episode_info: data.latestMatch.episodeInfo,
+                        file_path: data.latestMatch.path,
+                        timestamp: data.latestMatch.timestamp
+                    }, true);
+                }
+            } else {
+                container.innerHTML = '<div class="status">No scan in progress</div>';
+                
+                // If scan has latest match, display it
+                if (data.latestMatch) {
+                    displayVerificationImage({
+                        found: true,
+                        verification_image_path: data.latestMatch.imagePath,
+                        match_score: data.latestMatch.matchScore,
+                        is_verified: data.latestMatch.isVerified,
+                        episode_info: data.latestMatch.episodeInfo,
+                        file_path: data.latestMatch.path,
+                        timestamp: data.latestMatch.timestamp
+                    }, true);
+                }
+            }
+        }
+        
+        function fetchLatestVerification() {
+            fetch('/api/latest-verification')
+                .then(response => response.json())
+                .then(data => {
+                    displayVerificationImage(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching latest verification:', error);
+                });
+        }
+        
+        function fetchScanStatus() {
+            fetch('/api/scan/status')
+                .then(response => response.json())
+                .then(data => {
+                    updateScanStatus(data);
+                    
+                    // Auto-refresh if scan is in progress
+                    if (data.isScanning) {
+                        setTimeout(fetchScanStatus, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching scan status:', error);
+                });
+        }
+        
+        // Initial load
+        fetchLatestVerification();
+        fetchScanStatus();
+        updateRefreshTime();
+        
+        // Set up refresh button
+        document.getElementById('refreshBtn').addEventListener('click', function() {
+            fetchLatestVerification();
+            fetchScanStatus();
+        });
+        
+        // Auto-refresh every 10 seconds
+        setInterval(function() {
+            fetchScanStatus();
+        }, 10000);
+    </script>
+</body>
+</html>
+`;
+
+// Write the viewer HTML file
+const viewerPath = path.join(publicDir, 'viewer.html');
+fs.writeFileSync(viewerPath, viewerHtml);
+console.log(`[SERVER] Created verification image viewer at: ${viewerPath}`);
 
 app.use(express.static(publicDir));
 // Explicitly set CORS headers for image files
@@ -511,20 +793,21 @@ app.post('/api/match', async (req, res) => {
       return res.status(400).json({ error: `Episode file not found or not accessible: ${episodePath}` });
     }
     
-    console.log(`[ROUTE] Running clip-matcher on: ${episodePath}`);
+    console.log(`[ROUTE] Running clip-matcher.py on: ${episodePath}`);
     
     // Setup parameters for clip-matcher.py
     const clipMatcherPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
     
     // Create a promise to handle the async process
     const matchPromise = new Promise((resolve) => {
-      // Build command to run the Python script directly without using the wrapper
+      // Build command to run the Python script
       const process = spawn('python3', [
         clipMatcherPath,
         episodePath,
-        '--max-stills', '2'
-        // Use default threshold (0.90) which is set in the script
-        // Not using --cpu flag to ensure GPU is used if available
+        '--max-stills', '5',
+        '--threshold', '0.96',
+        '--early-stop', '0.98',
+        '--strict'
       ]);
       
       let stdoutData = '';
@@ -815,6 +1098,30 @@ console.log('[ROUTE] Registered route: POST /api/scan');
 // GET /api/scan/status - Get current scan status
 app.get('/api/scan/status', (req, res) => {
   console.log('[ROUTE] GET /api/scan/status');
+  
+  // If we're not scanning, try to get the latest verification from the database
+  if (!scanStatus.isScanning && !scanStatus.latestMatch) {
+    try {
+      const latestFile = getLatestScannedFile.get();
+      if (latestFile) {
+        // Add latest verification info to scan status
+        scanStatus.latestMatch = {
+          path: latestFile.file_path,
+          imagePath: latestFile.verification_image_path,
+          matchScore: latestFile.match_score,
+          isVerified: latestFile.is_verified === 1,
+          episodeInfo: latestFile.episode_info,
+          timestamp: Date.now() // Add timestamp to force a browser cache refresh
+        };
+      }
+    } catch (error) {
+      console.error('[ERROR] Failed to get latest verification for scan status:', error);
+    }
+  } else if (scanStatus.latestMatch) {
+    // Always add a fresh timestamp to force browser to reload the image
+    scanStatus.latestMatch.timestamp = Date.now();
+  }
+  
   res.json(scanStatus);
 });
 console.log('[ROUTE] Registered route: GET /api/scan/status');
@@ -831,8 +1138,10 @@ async function runClipMatcher(filePath) {
     const process = spawn('python3', [
       clipMatcherPath,
       filePath,
-      '--max-stills', '2'
-      // Use default threshold (0.90) which is set in the script
+      '--max-stills', '5',
+      '--threshold', '0.96',
+      '--early-stop', '0.98',
+      '--strict'
     ]);
     
     let stdoutData = '';
@@ -842,7 +1151,14 @@ async function runClipMatcher(filePath) {
     process.stdout.on('data', (data) => {
       const dataStr = data.toString();
       stdoutData += dataStr;
-      console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
+      
+      // Look for key output lines to log immediately
+      if (dataStr.includes('Best match:')) {
+        console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
+      }
+      if (dataStr.includes('Verification images saved to:')) {
+        console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
+      }
     });
     
     // Capture stderr data
@@ -891,6 +1207,16 @@ async function runClipMatcher(filePath) {
           const verificationLine = lines.find(line => line.includes('Verification images saved to:'));
           if (verificationLine) {
             verificationPath = verificationLine.replace('Verification images saved to:', '').trim();
+            console.log(`[CLIP-MATCHER] Verification images saved at: ${verificationPath}`);
+            
+            // Verify the best_match.jpg file exists
+            const bestMatchPath = path.join(verificationPath, 'best_match.jpg');
+            try {
+              fs.accessSync(bestMatchPath, fs.constants.R_OK);
+              console.log(`[CLIP-MATCHER] Found best match image at: ${bestMatchPath}`);
+            } catch (err) {
+              console.error(`[CLIP-MATCHER] Best match image not found: ${bestMatchPath}`);
+            }
           }
           
           // Extract best matching still number
@@ -900,7 +1226,7 @@ async function runClipMatcher(filePath) {
             bestMatchingStill = bestStillLine.replace('Best matching still:', '').trim();
           }
           
-          resolve({
+          const result = {
             success: true,
             verified: isVerified,
             matchScore: bestMatch,
@@ -909,7 +1235,12 @@ async function runClipMatcher(filePath) {
             verificationPath: verificationPath,
             bestStill: bestMatchingStill,
             usingGPU: stdoutData.includes('Using device: cuda')
-          });
+          };
+          
+          console.log(`[CLIP-MATCHER] Processing complete for: ${path.basename(filePath)}`);
+          console.log(`[CLIP-MATCHER] Match score: ${bestMatch}, Verified: ${isVerified}`);
+          
+          resolve(result);
         } catch (error) {
           console.error(`[CLIP-MATCHER] Error parsing results: ${error.message}`);
           resolve({ 
@@ -976,24 +1307,7 @@ async function processScan(libraries) {
         const stats = await fs.promises.stat(file.path);
         const modifiedTime = Math.floor(stats.mtimeMs);
         
-        // Skip if file hasn't changed since last scan
-        if (existingRecord && existingRecord.file_modified_time === modifiedTime) {
-          console.log(`[SCAN] Skipping unchanged file: ${file.path}`);
-          
-          // Track this as latest successful match if it has a verification image
-          if (existingRecord.verification_image_path) {
-            latestSuccessfulMatch = {
-              path: file.path,
-              imagePath: existingRecord.verification_image_path,
-              matchScore: existingRecord.match_score,
-              isVerified: existingRecord.is_verified,
-              episodeInfo: existingRecord.episode_info
-            };
-          }
-          
-          continue;
-        }
-        
+        // Process every file regardless of modification time
         console.log(`[SCAN] Processing file: ${file.path}`);
         
         // Extract filename without extension for better identification
@@ -1019,8 +1333,10 @@ async function processScan(libraries) {
               imagePath: verificationImagePath,
               matchScore: typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0,
               isVerified: matchResult.verified === true,
-              episodeInfo: typeof matchResult.episode === 'string' ? matchResult.episode : fileName
+              episodeInfo: typeof matchResult.episode === 'string' ? matchResult.episode : fileName,
+              timestamp: Date.now() // Add a timestamp to force browser cache refresh
             };
+            console.log(`[MATCH] Updated latest successful match: ${file.path} -> ${verificationImagePath}`);
           }
           
           // Ensure all values are valid SQLite types
