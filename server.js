@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const db = new Database('libraries.db', { verbose: console.log });
 
 // Update the clip-matcher.py default threshold
-const clipMatcherThreshold = 0.96;
+const clipMatcherThreshold = 0.95;
 const clipMatcherEarlyStop = 0.98;
 const clipMatcherDefaultPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
 let clipMatcherContent = fs.readFileSync(clipMatcherDefaultPath, 'utf8');
@@ -853,7 +853,7 @@ app.post('/api/match', async (req, res) => {
         clipMatcherPath,
         episodePath,
         '--max-stills', '5',
-        '--threshold', '0.96',
+        '--threshold', '0.95',
         '--early-stop', '0.98',
         '--strict'
       ]);
@@ -1276,7 +1276,7 @@ async function runClipMatcher(filePath) {
       clipMatcherPath,
       filePath,
       '--max-stills', '5',
-      '--threshold', '0.96',
+      '--threshold', '0.95',
       '--early-stop', '0.98',
       '--strict'
     ]);
