@@ -12,6 +12,7 @@ interface ScanStatus {
   currentFile: string;
   startTime: number | null;
   errors: string[];
+  stopRequested: boolean;
 }
 
 interface ScannedFile {
@@ -51,7 +52,8 @@ export default function Dashboard() {
     processedFiles: 0,
     currentFile: '',
     startTime: null,
-    errors: []
+    errors: [],
+    stopRequested: false
   });
   const [latestScan, setLatestScan] = useState<ScannedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,8 @@ export default function Dashboard() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [isStoppingScan, setIsStoppingScan] = useState<boolean>(false);
+  const [stopMessage, setStopMessage] = useState<string | null>(null);
 
   // Fetch scan status
   const fetchScanStatus = async () => {
@@ -166,6 +170,35 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Error starting scan:', error);
       setError(`Failed to start scan: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Stop the current scan
+  const handleStopScan = async () => {
+    if (!scanStatus.isScanning || isStoppingScan) return;
+
+    setIsStoppingScan(true);
+    setStopMessage(null); // Clear previous message
+
+    try {
+      const response = await fetch('http://localhost:5000/api/scan/stop', {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to request scan stop');
+      }
+      
+      setStopMessage(data.message || 'Stop request sent successfully.');
+      // Polling will eventually update isScanning to false
+
+    } catch (error) {
+      console.error('Error stopping scan:', error);
+      setError(`Failed to stop scan: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      // Keep loading state true until scan actually stops via polling
+      // setIsStoppingScan(false); 
     }
   };
 
@@ -298,17 +331,32 @@ export default function Dashboard() {
       <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Media Scanner</h2>
-          <button
-            onClick={startScan}
-            disabled={scanStatus.isScanning}
-            className={`px-4 py-2 rounded font-medium ${
-              scanStatus.isScanning 
-                ? 'bg-gray-600 cursor-not-allowed' 
-                : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-          >
-            {scanStatus.isScanning ? 'Scanning...' : 'Scan All Libraries'}
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={startScan}
+              disabled={scanStatus.isScanning || isStoppingScan}
+              className={`px-4 py-2 rounded font-medium ${
+                scanStatus.isScanning || isStoppingScan
+                  ? 'bg-gray-600 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {scanStatus.isScanning ? 'Scanning...' : 'Scan All Libraries'}
+            </button>
+            {scanStatus.isScanning && (
+              <button
+                onClick={handleStopScan}
+                disabled={isStoppingScan || scanStatus.stopRequested}
+                className={`px-4 py-2 rounded font-medium ${
+                  isStoppingScan || scanStatus.stopRequested
+                    ? 'bg-gray-600 cursor-not-allowed'
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                {isStoppingScan || scanStatus.stopRequested ? 'Stopping...' : 'Stop Scan'}
+              </button>
+            )}
+          </div>
         </div>
         
         {/* Progress Bar */}

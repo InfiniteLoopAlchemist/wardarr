@@ -977,6 +977,53 @@ app.get('/api/history', (req, res) => {
 });
 console.log('[ROUTE] Registered route: GET /api/history');
 
+// DELETE /api/history - Clear all scan history
+app.delete('/api/history', (req, res) => {
+  console.log('[ROUTE] DELETE /api/history');
+  try {
+    // Request stop of any ongoing scan first
+    if (scanStatus.isScanning) {
+      console.log('[ROUTE] Requesting stop of ongoing scan due to history reset...');
+      scanStatus.stopRequested = true;
+      // We don't wait here, just signal. The scan loop will stop itself.
+    }
+
+    // Prepare and run the delete statement
+    const deleteAllScannedFiles = db.prepare('DELETE FROM scanned_files');
+    const result = deleteAllScannedFiles.run();
+    
+    console.log(`[DB] Cleared ${result.changes} records from scanned_files table.`);
+    
+    // Also reset the latestMatch in scanStatus if it exists
+    if (scanStatus.latestMatch) {
+      scanStatus.latestMatch = null;
+      console.log('[STATUS] Cleared latest match from scan status.')
+    }
+
+    res.status(200).json({ message: 'Scan history cleared successfully!' });
+  } catch (error) {
+    console.error('[ERROR] Failed to clear scan history:', error);
+    res.status(500).json({ error: 'Failed to clear scan history from database' });
+  }
+});
+console.log('[ROUTE] Registered route: DELETE /api/history');
+
+// POST /api/scan/stop - Request to stop the current scan
+app.post('/api/scan/stop', (req, res) => {
+  console.log('[ROUTE] POST /api/scan/stop');
+  if (!scanStatus.isScanning) {
+    return res.status(400).json({ message: 'No scan is currently in progress.' });
+  }
+  if (scanStatus.stopRequested) {
+    return res.status(400).json({ message: 'Scan stop already requested.' });
+  }
+
+  console.log('[SCAN] Stop requested by user.');
+  scanStatus.stopRequested = true;
+  res.status(200).json({ message: 'Scan stop requested. Please wait for the current file to finish.' });
+});
+console.log('[ROUTE] Registered route: POST /api/scan/stop');
+
 // GET /api/latest-verification - Get most recent verification
 app.get('/api/latest-verification', (req, res) => {
   console.log('[ROUTE] GET /api/latest-verification');
@@ -1103,7 +1150,9 @@ let scanStatus = {
   processedFiles: 0,
   currentFile: '',
   startTime: null,
-  errors: []
+  errors: [],
+  latestMatch: null, // Keep track of the latest match info
+  stopRequested: false // Flag to signal scan stop
 };
 
 // Helper function to find all media files in a directory recursively
@@ -1201,7 +1250,9 @@ app.post('/api/scan', async (req, res) => {
       processedFiles: 0,
       currentFile: '',
       startTime: Date.now(),
-      errors: []
+      errors: [],
+      latestMatch: null, // Reset latest match
+      stopRequested: false // Reset stopRequested flag
     };
     
     // Get all libraries
@@ -1413,6 +1464,8 @@ const sanitizeForSQLite = (value) => {
 
 // Helper function to process the scan asynchronously
 async function processScan(libraries) {
+  // Reset stopRequested flag at the beginning of a new scan
+  scanStatus.stopRequested = false; 
   try {
     // Find all media files in all libraries
     let allFiles = [];
@@ -1431,6 +1484,12 @@ async function processScan(libraries) {
     
     // Process each file
     for (let i = 0; i < allFiles.length; i++) {
+      // Check if a stop has been requested before processing the next file
+      if (scanStatus.stopRequested) {
+        console.log('[SCAN] Stop request received. Halting scan...');
+        break; // Exit the loop
+      }
+      
       const file = allFiles[i];
       scanStatus.processedFiles = i;
       scanStatus.currentFile = file.path;
@@ -1583,6 +1642,7 @@ async function processScan(libraries) {
     scanStatus.processedFiles = allFiles.length;
     scanStatus.currentFile = '';
     scanStatus.isScanning = false;
+    scanStatus.stopRequested = false; // Reset flag after stopping
     
     // Add the latest match info to the status
     if (latestSuccessfulMatch) {
@@ -1596,6 +1656,7 @@ async function processScan(libraries) {
   } catch (error) {
     console.error('[ERROR] Scan process failed:', error);
     scanStatus.isScanning = false;
+    scanStatus.stopRequested = false; // Reset flag on error too
     scanStatus.errors.push(`Scan process failed: ${error.message}`);
   }
 }
