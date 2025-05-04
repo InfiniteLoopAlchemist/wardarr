@@ -7,9 +7,11 @@ import argparse
 import subprocess
 import requests
 import shutil
+import traceback
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from pathlib import Path
+import re
 import torch
 from transformers import CLIPProcessor, CLIPModel
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +37,45 @@ VERIFY_DIR = 'verification'
 # Frame extraction rate (1 frame per second)
 FRAME_RATE = 1
 
+def search_tmdb_for_show(show_name, year=None):
+    """Search TMDB for a show by name and optionally year."""
+    try:
+        print(f"Searching TMDB for show: {show_name}" + (f" ({year})" if year else ""))
+        
+        query_params = {
+            "api_key": TMDB_API_KEY,
+            "query": show_name,
+            "language": "en-US",
+            "page": 1,
+            "include_adult": "false"
+        }
+        
+        if year:
+            query_params["first_air_date_year"] = year
+            
+        response = requests.get(f"{TMDB_BASE_URL}/search/tv", params=query_params)
+        
+        if response.status_code != 200:
+            print(f"TMDB API Error: HTTP {response.status_code} - {response.text}")
+            return None
+            
+        data = response.json()
+        
+        if not data.get('results') or len(data['results']) == 0:
+            print(f"No TV shows found for '{show_name}'")
+            return None
+            
+        # Return the first result's ID
+        show = data['results'][0]
+        tmdb_id = show['id']
+        print(f"Found show: {show['name']} (ID: {tmdb_id})")
+        return tmdb_id
+        
+    except Exception as e:
+        print(f"Error searching TMDB: {str(e)}")
+        traceback.print_exc()
+        return None
+
 def parse_filename(filepath):
     """Extract show, season and episode information from filename."""
     filename = os.path.basename(filepath)
@@ -42,32 +83,90 @@ def parse_filename(filepath):
     print(f"Analyzing filename: {filename}")
     
     # Extract season and episode information
-    import re
     match = re.search(r'S(\d+)E(\d+)', filename, re.IGNORECASE)
     
     if match:
         season = int(match.group(1))
         episode = int(match.group(2))
         
-        return {
-            "show": "South Park",  # Hardcoded for now
-            "tvdbId": 75897,       # Hardcoded for now
-            "tmdbId": 2190,        # Hardcoded for now
+        # Try to extract show name before the season/episode info
+        show_match = re.search(r'^(.+?)(?:\s*\(|\s*-\s*S\d+|\s*S\d+)', filename, re.IGNORECASE)
+        show_name = show_match.group(1).strip() if show_match else "Unknown Show"
+        
+        # Clean up show name (remove any trailing spaces, dots, or underscores)
+        show_name = re.sub(r'[._]+$', '', show_name.strip())
+        # Replace dots and underscores with spaces
+        show_name = re.sub(r'[._]+', ' ', show_name).strip()
+        
+        # Look for year in parentheses
+        year_match = re.search(r'\((\d{4})\)', filename)
+        year = year_match.group(1) if year_match else None
+        
+        # Look for episode title after S00E00 and before brackets/parentheses
+        episode_title_match = re.search(r'S\d+E\d+\s*-\s*([^[\]()]+)', filename, re.IGNORECASE)
+        episode_title = episode_title_match.group(1).strip() if episode_title_match else None
+        
+        # Check for TVDB or IMDB IDs in brackets
+        id_match = re.search(r'\[(?:tvdbid|imdb)-(\w+)\]', filename, re.IGNORECASE)
+        media_id = id_match.group(1) if id_match else None
+        
+        # Determine TMDB ID by searching for the show
+        tmdb_id = search_tmdb_for_show(show_name, year)
+        if not tmdb_id:
+            print(f"WARNING: Could not find TMDB ID for '{show_name}'. Using fallback search.")
+            # Try searching with just the first part of the show name (before any special characters)
+            simplified_name = re.sub(r'[^\w\s].*', '', show_name).strip()
+            if simplified_name and simplified_name != show_name:
+                tmdb_id = search_tmdb_for_show(simplified_name)
+        
+        # If we still can't find it, use a safer fallback than hardcoding South Park
+        if not tmdb_id:
+            print(f"WARNING: Could not find TMDB ID for '{show_name}'. Using internal ID 12345.")
+            tmdb_id = 12345  # Use a neutral internal ID that won't match anything
+        
+        result = {
+            "show": show_name,
+            "year": year,
             "season": season,
-            "episode": episode
+            "episode": episode,
+            "episode_title": episode_title,
+            "tvdbId": media_id if media_id else None,
+            "tmdbId": tmdb_id,
+            "original_filename": filename
         }
+        
+        # Create a formatted display name for the episode
+        if episode_title:
+            result["display_name"] = f"{show_name} - S{season:02d}E{episode:02d} - {episode_title}"
+        else:
+            result["display_name"] = f"{show_name} - S{season:02d}E{episode:02d}"
+            
+        return result
     
+    print(f"WARNING: Could not extract season and episode from filename: {filename}")
     return None
 
 def get_episode_images(series_id, season, episode):
     """Get episode images from TMDB."""
     try:
-        print(f"Getting images for S{season}E{episode}")
+        print(f"Getting images for S{season}E{episode} from series ID {series_id}")
         url = f"{TMDB_BASE_URL}/tv/{series_id}/season/{season}/episode/{episode}/images"
         response = requests.get(url, params={"api_key": TMDB_API_KEY})
-        return response.json()
+        
+        if response.status_code != 200:
+            print(f"TMDB API Error: HTTP {response.status_code} - {response.text}")
+            return None
+            
+        data = response.json()
+        
+        if 'stills' not in data or len(data['stills']) == 0:
+            print(f"No stills found for S{season}E{episode}")
+            return None
+            
+        return data
     except Exception as e:
         print(f"Error getting episode images: {str(e)}")
+        traceback.print_exc()
         return None
 
 def download_image(url, output_path):
@@ -97,18 +196,30 @@ def extract_frames(video_path, output_dir, frame_rate=1):
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
         
+        # Check if the video file exists
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file does not exist: {video_path}")
+        
         # Extract frames using FFmpeg
         ffmpeg_cmd = f'ffmpeg -i "{video_path}" -vf "fps={frame_rate}" -q:v 2 "{output_dir}/frame-%04d.jpg"'
-        subprocess.run(ffmpeg_cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.run(ffmpeg_cmd, shell=True, capture_output=True, text=True)
+        
+        if process.returncode != 0:
+            print(f"FFmpeg error: {process.stderr}")
+            raise Exception(f"FFmpeg failed with code {process.returncode}: {process.stderr}")
         
         # Get list of extracted frames
         frame_files = [f for f in os.listdir(output_dir) if f.startswith('frame-')]
         frame_paths = [os.path.join(output_dir, f) for f in sorted(frame_files)]
         
+        if not frame_paths:
+            print("Warning: No frames were extracted")
+            
         print(f"Extracted {len(frame_paths)} frames")
         return frame_paths
     except Exception as e:
         print(f"Error extracting frames: {str(e)}")
+        traceback.print_exc()
         return []
 
 def cosine_similarity(a, b):
@@ -148,7 +259,7 @@ def process_batch(batch, still_embedding, processor, model):
     
     return results
 
-def create_comparison_image(still_path, frame_path, output_path, similarity):
+def create_comparison_image(still_path, frame_path, output_path, similarity, episode_info=None):
     """Create a side-by-side comparison image for verification."""
     try:
         # Open images
@@ -164,15 +275,30 @@ def create_comparison_image(still_path, frame_path, output_path, similarity):
         frame_img = frame_img.resize((frame_width, height), Image.LANCZOS)
         
         # Create new image with both side by side
-        comparison = Image.new('RGB', (still_width + frame_width + 10, height + 50), color=(255, 255, 255))
+        comparison = Image.new('RGB', (still_width + frame_width + 10, height + 70), color=(255, 255, 255))
         comparison.paste(still_img, (0, 0))
         comparison.paste(frame_img, (still_width + 10, 0))
         
         # Add text
         draw = ImageDraw.Draw(comparison)
-        draw.text((10, height + 10), f"TMDB Still", fill=(0, 0, 0))
-        draw.text((still_width + 20, height + 10), f"Video Frame - Similarity: {similarity:.3f}", fill=(0, 0, 0))
         
+        # Try to load a nice font, fall back to default if not available
+        try:
+            # Use a common font that's likely to be available
+            font = ImageFont.truetype("Arial", 14)
+            small_font = ImageFont.truetype("Arial", 12)
+        except:
+            # Fall back to default
+            font = ImageFont.load_default()
+            small_font = ImageFont.load_default()
+        
+        draw.text((10, height + 10), f"TMDB Still", fill=(0, 0, 0), font=font)
+        draw.text((still_width + 20, height + 10), f"Video Frame - Similarity: {similarity:.3f}", fill=(0, 0, 0), font=font)
+        
+        # Add episode info if available
+        if episode_info and episode_info.get('display_name'):
+            draw.text((10, height + 35), f"Episode: {episode_info['display_name']}", fill=(0, 0, 0), font=small_font)
+            
         # Save comparison image
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         comparison.save(output_path)
@@ -180,6 +306,7 @@ def create_comparison_image(still_path, frame_path, output_path, similarity):
         return output_path
     except Exception as e:
         print(f"Error creating comparison image: {str(e)}")
+        traceback.print_exc()
         return None
 
 def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2, strict_mode=False):
@@ -213,12 +340,17 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
         stills_to_process = min(len(episode_images['stills']), max_stills)
         print(f"Found {len(episode_images['stills'])} stills for episode (will process {stills_to_process})")
         
-        # Prepare verification directory
-        verify_path = os.path.join(VERIFY_DIR, f"{file_info['tmdbId']}_S{file_info['season']}E{file_info['episode']}")
+        # Create a unique directory for this verification based on the filename
+        file_basename = os.path.basename(media_path)
+        file_name_without_ext = os.path.splitext(file_basename)[0]
+        
+        # Create a safe directory name
+        safe_dirname = re.sub(r'[^\w\-_]', '_', file_name_without_ext)
+        verify_path = os.path.join(VERIFY_DIR, safe_dirname)
         os.makedirs(verify_path, exist_ok=True)
         
         # Extract frames from video
-        frames_dir = os.path.join(TEMP_DIR, f"{file_info['tmdbId']}_S{file_info['season']}E{file_info['episode']}_frames")
+        frames_dir = os.path.join(TEMP_DIR, safe_dirname + "_frames")
         frame_paths = extract_frames(media_path, frames_dir, FRAME_RATE)
         
         if len(frame_paths) == 0:
@@ -244,7 +376,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
             still_url = f"{TMDB_IMAGE_BASE_URL}{still['file_path']}"
             
             # Prepare file path for this still
-            still_path = os.path.join(TEMP_DIR, f"{file_info['tmdbId']}_S{file_info['season']}E{file_info['episode']}_still_{still_index + 1}.jpg")
+            still_path = os.path.join(TEMP_DIR, f"{safe_dirname}_still_{still_index + 1}.jpg")
             
             # Download the reference still
             print(f"\nProcessing still #{still_index + 1} of {stills_to_process}")
@@ -304,7 +436,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
             # Create comparison image for this still
             if still_best_match:
                 comparison_path = os.path.join(verify_path, f"still_{still_index + 1}_match.jpg")
-                create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity)
+                create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info)
         
         # Determine if this is a match based on mode
         if strict_mode:
@@ -324,12 +456,15 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
         # Create final verification image for the best match
         if best_match_frame and best_match_still_path:
             final_comparison_path = os.path.join(verify_path, "best_match.jpg")
-            create_comparison_image(best_match_still_path, best_match_frame, final_comparison_path, max_similarity)
+            create_comparison_image(best_match_still_path, best_match_frame, final_comparison_path, max_similarity, file_info)
         
         print("\nResults:")
         print("---------")
         print(f"File: {os.path.basename(media_path)}")
-        print(f"Episode: {file_info['show']} S{file_info['season']}E{file_info['episode']}")
+        if file_info.get('display_name'):
+            print(f"Episode: {file_info['display_name']}")
+        else:
+            print(f"Episode: {file_info['show']} S{file_info['season']}E{file_info['episode']}")
         print(f"Best match: {max_similarity:.3f} (threshold: {threshold})")
         print(f"Match: {'✓ VERIFIED' if is_match else '✗ WRONG EPISODE'}")
         if best_match_frame:
@@ -346,46 +481,39 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=2,
     
     except Exception as e:
         print(f"Error processing media file: {str(e)}")
-        import traceback
         traceback.print_exc()
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description='TMDB Episode Image Matcher using CLIP')
-    parser.add_argument('media_path', nargs='?', help='Path to the media file')
-    parser.add_argument('--threshold', type=float, default=SIMILARITY_THRESHOLD, 
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Match TV show episodes with stills')
+    parser.add_argument('media_path', help='Path to the media file')
+    parser.add_argument('--threshold', type=float, default=SIMILARITY_THRESHOLD,
                         help=f'Similarity threshold (default: {SIMILARITY_THRESHOLD})')
-    parser.add_argument('--cpu', action='store_true', help='Force CPU usage even if GPU is available')
-    parser.add_argument('--max-stills', type=int, default=2, help='Maximum number of stills to process (default: 2)')
-    parser.add_argument('--strict', action='store_true', help='Strict mode: require ALL stills to match above threshold')
+    parser.add_argument('--max-stills', type=int, default=5,
+                        help='Maximum number of stills to use from TMDB')
+    parser.add_argument('--strict', action='store_true',
+                        help='Strict mode - only verify if similarity exceeds threshold')
+    parser.add_argument('--cpu', action='store_true',
+                        help='Force CPU mode even if GPU is available')
+    
+    # Parse arguments
     args = parser.parse_args()
     
-    if not args.media_path:
-        parser.print_help()
-        print("\nNotes:")
-        print("- Runs ~2 minutes per 40-min episode on a base M1 (1 fps sample, CPU)")
-        print("- Default similarity threshold is 0.40")
-        print("- Raise to 0.50 for stricter matching, lower to 0.30 for looser matching")
-        print("- Use --strict to require ALL stills to match (prevents false positives)")
-        print("- Verification images are saved to the 'verification' directory")
-        print("- Requires FFmpeg for frame extraction")
-        print("- Requires PyTorch and Transformers libraries")
-        sys.exit(0)
-    
-    # Force CPU if requested
+    # Force CPU if specified
+    global device
     if args.cpu:
-        global device
         device = torch.device('cpu')
-        print(f"Forcing CPU usage: {device}")
+        print(f"Forcing CPU mode")
     
-    # Pass the parameters to the function
-    is_match = process_media_file(
-        args.media_path, 
-        threshold=args.threshold, 
-        max_stills=args.max_stills,
-        strict_mode=args.strict
-    )
-    sys.exit(0 if is_match else 1)
+    # Process the media file with error handling
+    try:
+        is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict)
+        return 0 if is_match else 1
+    except Exception as e:
+        print(f"ERROR: Failed to process media file: {str(e)}")
+        traceback.print_exc()
+        return 1
 
-if __name__ == "__main__":
-    main() 
+if __name__ == '__main__':
+    sys.exit(main()) 

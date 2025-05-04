@@ -124,6 +124,9 @@ server.on('connection', (socket) => {
 // Add middleware to parse JSON and handle errors
 app.use(express.json({
   verify: (req, res, buf) => {
+    // Skip verification for empty bodies
+    if (buf.length === 0) return;
+    
     try {
       JSON.parse(buf);
     } catch (e) {
@@ -542,73 +545,6 @@ app.post('/api/match', async (req, res) => {
               if (match) bestMatch = parseFloat(match[1]);
             }
 
-
-// Add a test route
-app.get('/test', (req, res) => {
-  console.log('[ROUTE] Handling /test request');
-  res.status(200).send('Server test route is working!');
-});
-console.log('[ROUTE] Registered route: GET /test');
-
-// Add a root path handler
-app.get('/', (req, res) => {
-  console.log('[ROUTE] Handling / request');
-  res.send('TV Show API Server - Test Mode');
-});
-console.log('[ROUTE] Registered route: GET /');
-
-// Add global error handling middleware
-app.use((err, req, res) => {
-  console.error(`[SERVER ERROR] ${err.stack}`);
-  res.status(500).send('Something broke!');
-});
-
-// Handle 404 errors for any routes not matched
-app.use((req, res) => {
-  console.error(`[404 ERROR] No route found for ${req.method} ${req.url}`);
-  res.status(404).json({ error: `Route not found: ${req.method} ${req.url}` });
-});
-
-console.log('[SERVER] Attempting to start server listening...');
-
-// Use the HTTP server instead of app.listen
-server.listen(PORT, () => {
-  console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
-  console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
-}); 
-
-// Add global error handlers
-process.on('uncaughtException', (err) => {
-  console.error(`[FATAL ERROR] Uncaught exception: ${err.message}`);
-  console.error(err.stack);
-  process.exit(1); //mandatory (as per the Node.js docs)
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL ERROR] Unhandled Rejection at:', reason);
-});
-
-// Log process events
-process.on('exit', (code) => {
-  console.log(`[PROCESS] Process exiting with code: ${code}`);
-});
-
-process.on('SIGINT', () => {
-  console.log('[PROCESS] Received SIGINT, shutting down gracefully');
-  server.close(() => {
-    console.log('[SERVER] Closed all connections');
-    process.exit(0);
-  });
-});
-
-process.on('SIGTERM', () => {
-  console.log('[PROCESS] Received SIGTERM, shutting down gracefully');
-  server.close(() => {
-    console.log('[SERVER] Closed all connections');
-    process.exit(0);
-  });
-});
-            
             // Extract episode detection
             let episode = '';
             const episodeLine = lines.find(line => line.includes('Episode:'));
@@ -818,6 +754,131 @@ app.get('/api/scan/status', (req, res) => {
 });
 console.log('[ROUTE] Registered route: GET /api/scan/status');
 
+// Helper function to run the clip-matcher.py script
+async function runClipMatcher(filePath) {
+  return new Promise((resolve) => {
+    console.log(`[CLIP-MATCHER] Running clip-matcher.py on: ${filePath}`);
+    
+    // Build the path to the script
+    const clipMatcherPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
+    
+    // Build command to run the Python script
+    const process = spawn('python3', [
+      clipMatcherPath,
+      filePath,
+      '--max-stills', '2'
+      // Use default threshold (0.90) which is set in the script
+    ]);
+    
+    let stdoutData = '';
+    let stderrData = '';
+    
+    // Capture stdout data
+    process.stdout.on('data', (data) => {
+      const dataStr = data.toString();
+      stdoutData += dataStr;
+      console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
+    });
+    
+    // Capture stderr data
+    process.stderr.on('data', (data) => {
+      const dataStr = data.toString();
+      stderrData += dataStr;
+      console.error(`[CLIP-MATCHER ERROR] ${dataStr.trim()}`);
+    });
+    
+    // Handle process completion
+    process.on('close', (code) => {
+      console.log(`[CLIP-MATCHER] Process exited with code ${code}`);
+      
+      if (code === 0) {
+        try {
+          // Extract only the important information from the output
+          const lines = stdoutData.split('\n');
+          
+          // Extract match status
+          const isVerified = stdoutData.includes('✓ VERIFIED');
+          
+          // Extract best match score
+          let bestMatch = 0;
+          const matchScoreLine = lines.find(line => line.includes('Best match:'));
+          if (matchScoreLine) {
+            const match = matchScoreLine.match(/Best match: ([\d.]+)/);
+            if (match) bestMatch = parseFloat(match[1]);
+          }
+          
+          // Extract episode detection
+          let episode = '';
+          const episodeLine = lines.find(line => line.includes('Episode:'));
+          if (episodeLine) {
+            episode = episodeLine.replace('Episode:', '').trim();
+          }
+          
+          // Extract processing time
+          let processingTime = '';
+          const timeLine = lines.find(line => line.includes('Total processing time:'));
+          if (timeLine) {
+            processingTime = timeLine.replace('Total processing time:', '').trim();
+          }
+          
+          // Extract paths to verification images
+          let verificationPath = '';
+          const verificationLine = lines.find(line => line.includes('Verification images saved to:'));
+          if (verificationLine) {
+            verificationPath = verificationLine.replace('Verification images saved to:', '').trim();
+          }
+          
+          // Extract best matching still number
+          let bestMatchingStill = '';
+          const bestStillLine = lines.find(line => line.includes('Best matching still:'));
+          if (bestStillLine) {
+            bestMatchingStill = bestStillLine.replace('Best matching still:', '').trim();
+          }
+          
+          resolve({
+            success: true,
+            verified: isVerified,
+            matchScore: bestMatch,
+            episode: episode,
+            processingTime: processingTime,
+            verificationPath: verificationPath,
+            bestStill: bestMatchingStill,
+            usingGPU: stdoutData.includes('Using device: cuda')
+          });
+        } catch (error) {
+          console.error(`[CLIP-MATCHER] Error parsing results: ${error.message}`);
+          resolve({ 
+            success: false, 
+            error: `Error parsing results: ${error.message}`
+          });
+        }
+      } else {
+        resolve({ 
+          success: false, 
+          error: `Process exited with code ${code}: ${stderrData}`
+        });
+      }
+    });
+    
+    // Handle process errors
+    process.on('error', (err) => {
+      console.error(`[CLIP-MATCHER] Failed to start process: ${err.message}`);
+      resolve({ success: false, error: `Failed to start process: ${err.message}` });
+    });
+  });
+}
+
+// Helper function to ensure values are SQLite-compatible
+const sanitizeForSQLite = (value) => {
+  if (value === undefined) return null;
+  if (value === true) return 1;
+  if (value === false) return 0;
+  if (value === Infinity || value === -Infinity || Number.isNaN(value)) return null;
+  // If it's an object or array, convert to JSON string
+  if (typeof value === 'object' && value !== null) return JSON.stringify(value);
+  return value;
+};
+
 // Helper function to process the scan asynchronously
 async function processScan(libraries) {
   try {
@@ -855,42 +916,112 @@ async function processScan(libraries) {
         
         console.log(`[SCAN] Processing file: ${file.path}`);
         
+        // Extract filename without extension for better identification
+        const fileName = path.basename(file.path);
+        
         // Run the clip-matcher.py script
         const matchResult = await runClipMatcher(file.path);
         
         if (matchResult.success) {
-          // Copy verification image to public folder
-          const publicImagePath = await copyVerificationImage(
-            path.join(matchResult.verificationPath, 'best_match.jpg')
-          );
+          // Create verification image path based on episode filename
+          let verificationImagePath = null;
+          if (matchResult.verificationPath) {
+            // Construct a predictable path to the best match image
+            const bestMatchPath = path.join(matchResult.verificationPath, 'best_match.jpg');
+            // Copy the image with a filename based on the episode name
+            verificationImagePath = await copyVerificationImage(bestMatchPath);
+          }
           
-          // Update or insert record in database
+          // Ensure all values are valid SQLite types
           const now = Math.floor(Date.now());
+          const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
+          const sanitizedFilePath = sanitizeForSQLite(file.path);
+          const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime);
+          const sanitizedScanTime = sanitizeForSQLite(now);
+          const sanitizedImagePath = sanitizeForSQLite(verificationImagePath);
+          const sanitizedMatchScore = sanitizeForSQLite(
+            typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0
+          );
+          const sanitizedIsVerified = sanitizeForSQLite(matchResult.verified === true ? 1 : 0);
+          const sanitizedEpisode = sanitizeForSQLite(
+            typeof matchResult.episode === 'string' ? matchResult.episode : fileName
+          );
           
           if (existingRecord) {
             // Update existing record
+            console.log(`[DB] Updating record for ${file.path}`);
             updateScannedFile.run(
-              now,
-              publicImagePath,
-              matchResult.matchScore,
-              matchResult.verified,
-              matchResult.episode,
-              file.path
+              sanitizedScanTime,
+              sanitizedImagePath,
+              sanitizedMatchScore,
+              sanitizedIsVerified,
+              sanitizedEpisode,
+              sanitizedFilePath
             );
           } else {
             // Insert new record
+            console.log(`[DB] Inserting new record for ${file.path}`);
             addScannedFile.run(
-              file.libraryId,
-              file.path,
-              modifiedTime,
-              now,
-              publicImagePath,
-              matchResult.matchScore,
-              matchResult.verified,
-              matchResult.episode
+              sanitizedLibraryId,
+              sanitizedFilePath,
+              sanitizedModifiedTime,
+              sanitizedScanTime,
+              sanitizedImagePath,
+              sanitizedMatchScore,
+              sanitizedIsVerified,
+              sanitizedEpisode
             );
           }
         } else {
+          // Even if the matching process failed, still update the database with the error
+          console.error(`[ERROR] Clip matcher failed for ${file.path}: ${matchResult.error}`);
+          
+          // Update with error info but keep existing verification image if any
+          const now = Math.floor(Date.now());
+          let publicImagePath = null;
+          
+          // Use existing verification image if available
+          if (existingRecord && existingRecord.verification_image_path) {
+            publicImagePath = existingRecord.verification_image_path;
+          }
+          
+          // Ensure we're only storing valid SQLite types
+          const errorMessage = typeof matchResult.error === 'string' ? 
+            `Error: ${matchResult.error}` : 'Error during processing';
+            
+          const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
+          const sanitizedFilePath = sanitizeForSQLite(file.path);
+          const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime);
+          const sanitizedScanTime = sanitizeForSQLite(now);
+          const sanitizedImagePath = sanitizeForSQLite(publicImagePath);
+          const sanitizedErrorMessage = sanitizeForSQLite(errorMessage);
+          
+          if (existingRecord) {
+            // Update existing record with error status
+            console.log(`[DB] Updating record with error for ${file.path}`);
+            updateScannedFile.run(
+              sanitizedScanTime,
+              sanitizedImagePath,
+              0, // Zero match score to indicate failure
+              0, // Not verified
+              sanitizedErrorMessage, // Store error in episode info
+              sanitizedFilePath
+            );
+          } else {
+            // Create new record with error status
+            console.log(`[DB] Inserting new record with error for ${file.path}`);
+            addScannedFile.run(
+              sanitizedLibraryId,
+              sanitizedFilePath,
+              sanitizedModifiedTime,
+              sanitizedScanTime,
+              sanitizedImagePath,
+              0, // Zero match score to indicate failure
+              0, // Not verified
+              sanitizedErrorMessage // Store error in episode info
+            );
+          }
+          
           scanStatus.errors.push(`Failed to process ${file.path}: ${matchResult.error}`);
         }
       } catch (error) {
@@ -911,3 +1042,75 @@ async function processScan(libraries) {
     scanStatus.errors.push(`Scan process failed: ${error.message}`);
   }
 }
+
+// Add a test route
+app.get('/test', (req, res) => {
+  console.log('[ROUTE] Handling /test request');
+  res.status(200).send('Server test route is working!');
+});
+console.log('[ROUTE] Registered route: GET /test');
+
+// Add a root path handler
+app.get('/', (req, res) => {
+  console.log('[ROUTE] Handling / request');
+  res.send('TV Show API Server - Test Mode');
+});
+console.log('[ROUTE] Registered route: GET /');
+
+// Add global error handling middleware
+app.use((err, req, res, next) => {
+  console.error(`[SERVER ERROR] ${err.stack}`);
+  res.status(500).send('Something broke!');
+});
+
+// Handle 404 errors for any routes not matched
+app.use((req, res) => {
+  console.error(`[404 ERROR] No route found for ${req.method} ${req.url}`);
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.url}` });
+});
+
+// Start the server
+console.log('[SERVER] Attempting to start server listening...');
+
+try {
+  // Use app.listen with explicit host binding
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
+    console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
+  });
+  console.log('[SERVER] Server listen call completed');
+} catch (error) {
+  console.error('[SERVER ERROR] Failed to start server:', error);
+}
+
+// Add global error handlers
+process.on('uncaughtException', (err) => {
+  console.error(`[FATAL ERROR] Uncaught exception: ${err.message}`);
+  console.error(err.stack);
+  process.exit(1); //mandatory (as per the Node.js docs)
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL ERROR] Unhandled Rejection at:', reason);
+});
+
+// Log process events
+process.on('exit', (code) => {
+  console.log(`[PROCESS] Process exiting with code: ${code}`);
+});
+
+process.on('SIGINT', () => {
+  console.log('[PROCESS] Received SIGINT, shutting down gracefully');
+  server.close(() => {
+    console.log('[SERVER] Closed all connections');
+    process.exit(0);
+  });
+});
+
+process.on('SIGTERM', () => {
+  console.log('[PROCESS] Received SIGTERM, shutting down gracefully');
+  server.close(() => {
+    console.log('[SERVER] Closed all connections');
+    process.exit(0);
+  });
+});
