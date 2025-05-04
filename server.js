@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const db = new Database('libraries.db', { verbose: console.log });
 
 // Update the clip-matcher.py default threshold
-const clipMatcherThreshold = 0.95;
+const clipMatcherThreshold = 0.90;
 const clipMatcherEarlyStop = 0.98;
 const clipMatcherDefaultPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
 let clipMatcherContent = fs.readFileSync(clipMatcherDefaultPath, 'utf8');
@@ -508,7 +508,8 @@ const addScannedFile = db.prepare(`
 `);
 const updateScannedFile = db.prepare(`
   UPDATE scanned_files 
-  SET last_scanned_time = ?, verification_image_path = ?, match_score = ?, is_verified = ?, episode_info = ? 
+  SET last_scanned_time = ?, verification_image_path = ?, match_score = ?, is_verified = ?, episode_info = ?, 
+      file_modified_time = ?
   WHERE file_path = ?
 `);
 
@@ -853,7 +854,7 @@ app.post('/api/match', async (req, res) => {
         clipMatcherPath,
         episodePath,
         '--max-stills', '5',
-        '--threshold', '0.95',
+        '--threshold', '0.90',
         '--early-stop', '0.98'
       ]);
       
@@ -1275,7 +1276,7 @@ async function runClipMatcher(filePath) {
       clipMatcherPath,
       filePath,
       '--max-stills', '5',
-      '--threshold', '0.95',
+      '--threshold', '0.90',
       '--early-stop', '0.98'
     ]);
     
@@ -1442,133 +1443,136 @@ async function processScan(libraries) {
         const stats = await fs.promises.stat(file.path);
         const modifiedTime = Math.floor(stats.mtimeMs);
         
-        // Process every file regardless of modification time
-        console.log(`[SCAN] Processing file: ${file.path}`);
-        
-        // Extract filename without extension for better identification
-        const fileName = path.basename(file.path);
-        
-        // Run the clip-matcher.py script
-        const matchResult = await runClipMatcher(file.path);
-        
-        if (matchResult.success) {
-          // Create verification image path based on episode filename
-          let verificationImagePath = null;
-          if (matchResult.verificationPath) {
-            // Construct a predictable path to the best match image
-            const bestMatchPath = path.join(matchResult.verificationPath, 'best_match.jpg');
-            // Copy the image with a filename based on the episode name
-            verificationImagePath = await copyVerificationImage(bestMatchPath, file.path);
-          }
-          
-          // Track this as the latest successful match
-          if (verificationImagePath) {
-            latestSuccessfulMatch = {
-              path: file.path,
-              imagePath: verificationImagePath,
-              matchScore: typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0,
-              isVerified: matchResult.verified === true,
-              episodeInfo: typeof matchResult.episode === 'string' ? matchResult.episode : fileName,
-              timestamp: Date.now() // Add a timestamp to force browser cache refresh
-            };
-            console.log(`[MATCH] Updated latest successful match: ${file.path} -> ${verificationImagePath}`);
-            
-            // Update the scanStatus with the latest match immediately
-            scanStatus.latestMatch = latestSuccessfulMatch;
-          }
-          
-          // Ensure all values are valid SQLite types
-          const now = Math.floor(Date.now());
-          const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
-          const sanitizedFilePath = sanitizeForSQLite(file.path);
-          const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime);
-          const sanitizedScanTime = sanitizeForSQLite(now);
-          const sanitizedImagePath = sanitizeForSQLite(verificationImagePath);
-          const sanitizedMatchScore = sanitizeForSQLite(
-            typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0
-          );
-          const sanitizedIsVerified = sanitizeForSQLite(matchResult.verified === true ? 1 : 0);
-          const sanitizedEpisode = sanitizeForSQLite(
-            typeof matchResult.episode === 'string' ? matchResult.episode : fileName
-          );
-          
-          if (existingRecord) {
-            // Update existing record
-            console.log(`[DB] Updating record for ${file.path}`);
-            updateScannedFile.run(
-              sanitizedScanTime,
-              sanitizedImagePath,
-              sanitizedMatchScore,
-              sanitizedIsVerified,
-              sanitizedEpisode,
-              sanitizedFilePath
-            );
-          } else {
-            // Insert new record
-            console.log(`[DB] Inserting new record for ${file.path}`);
-            addScannedFile.run(
-              sanitizedLibraryId,
-              sanitizedFilePath,
-              sanitizedModifiedTime,
-              sanitizedScanTime,
-              sanitizedImagePath,
-              sanitizedMatchScore,
-              sanitizedIsVerified,
-              sanitizedEpisode
-            );
-          }
+        // Determine if a rescan is needed
+        let shouldScan = false;
+        if (!existingRecord) {
+          console.log(`[SCAN] New file detected, scanning: ${file.path}`);
+          shouldScan = true;
+        } else if (modifiedTime > existingRecord.file_modified_time) {
+          console.log(`[SCAN] File modified since last scan, rescanning: ${file.path}`);
+          shouldScan = true;
         } else {
-          // Even if the matching process failed, still update the database with the error
-          console.error(`[ERROR] Clip matcher failed for ${file.path}: ${matchResult.error}`);
-          
-          // Update with error info but keep existing verification image if any
-          const now = Math.floor(Date.now());
-          let publicImagePath = null;
-          
-          // Use existing verification image if available
-          if (existingRecord && existingRecord.verification_image_path) {
-            publicImagePath = existingRecord.verification_image_path;
-          }
-          
-          // Ensure we're only storing valid SQLite types
-          const errorMessage = typeof matchResult.error === 'string' ? 
-            `Error: ${matchResult.error}` : 'Error during processing';
-            
-          const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
-          const sanitizedFilePath = sanitizeForSQLite(file.path);
-          const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime);
-          const sanitizedScanTime = sanitizeForSQLite(now);
-          const sanitizedImagePath = sanitizeForSQLite(publicImagePath);
-          const sanitizedErrorMessage = sanitizeForSQLite(errorMessage);
-          
-          if (existingRecord) {
-            // Update existing record with error status
-            console.log(`[DB] Updating record with error for ${file.path}`);
-            updateScannedFile.run(
-              sanitizedScanTime,
-              sanitizedImagePath,
-              0, // Zero match score to indicate failure
-              0, // Not verified
-              sanitizedErrorMessage, // Store error in episode info
-              sanitizedFilePath
-            );
-          } else {
-            // Create new record with error status
-            console.log(`[DB] Inserting new record with error for ${file.path}`);
-            addScannedFile.run(
-              sanitizedLibraryId,
-              sanitizedFilePath,
-              sanitizedModifiedTime,
-              sanitizedScanTime,
-              sanitizedImagePath,
-              0, // Zero match score to indicate failure
-              0, // Not verified
-              sanitizedErrorMessage // Store error in episode info
-            );
-          }
-          
-          scanStatus.errors.push(`Failed to process ${file.path}: ${matchResult.error}`);
+          console.log(`[SCAN] File unchanged since last scan, skipping: ${file.path}`);
+          // Optional: Update scan status even if skipped, or leave as is
+          // scanStatus.processedFiles++; // Increment if you want skipped files to count immediately
         }
+
+        if (shouldScan) {
+          // Extract filename without extension for better identification
+          const fileName = path.basename(file.path);
+          
+          // Run the clip-matcher.py script
+          const matchResult = await runClipMatcher(file.path);
+          
+          if (matchResult.success) {
+            // Create verification image path based on episode filename
+            let verificationImagePath = null;
+            if (matchResult.verificationPath) {
+              // Construct a predictable path to the best match image
+              const bestMatchPath = path.join(matchResult.verificationPath, 'best_match.jpg');
+              // Copy the image with a filename based on the episode name
+              verificationImagePath = await copyVerificationImage(bestMatchPath, file.path);
+            }
+            
+            // Track this as the latest successful match
+            if (verificationImagePath) {
+              latestSuccessfulMatch = {
+                path: file.path,
+                imagePath: verificationImagePath,
+                matchScore: typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0,
+                isVerified: matchResult.verified === true,
+                episodeInfo: typeof matchResult.episode === 'string' ? matchResult.episode : fileName,
+                timestamp: Date.now() // Add a timestamp to force browser cache refresh
+              };
+              console.log(`[MATCH] Updated latest successful match: ${file.path} -> ${verificationImagePath}`);
+              
+              // Update the scanStatus with the latest match immediately
+              scanStatus.latestMatch = latestSuccessfulMatch;
+            }
+            
+            // Ensure all values are valid SQLite types
+            const now = Math.floor(Date.now());
+            const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
+            const sanitizedFilePath = sanitizeForSQLite(file.path);
+            const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime); // Use current modified time
+            const sanitizedScanTime = sanitizeForSQLite(now);
+            const sanitizedImagePath = sanitizeForSQLite(verificationImagePath);
+            const sanitizedMatchScore = sanitizeForSQLite(
+              typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0
+            );
+            const sanitizedIsVerified = sanitizeForSQLite(matchResult.verified === true ? 1 : 0);
+            // Use detected episode name or fallback to filename
+            const episodeInfo = typeof matchResult.episode === 'string' && matchResult.episode ? matchResult.episode : fileName;
+            const sanitizedEpisode = sanitizeForSQLite(episodeInfo);
+            
+            if (existingRecord) {
+              // Update existing record
+              console.log(`[DB] Updating record for ${file.path}`);
+              updateScannedFile.run(
+                sanitizedScanTime,
+                sanitizedImagePath,
+                sanitizedMatchScore,
+                sanitizedIsVerified,
+                sanitizedEpisode,
+                sanitizedModifiedTime,
+                sanitizedFilePath
+              );
+            } else {
+              // Insert new record
+              console.log(`[DB] Inserting new record for ${file.path}`);
+              addScannedFile.run(
+                sanitizedLibraryId,
+                sanitizedFilePath,
+                sanitizedModifiedTime,
+                sanitizedScanTime,
+                sanitizedImagePath,
+                sanitizedMatchScore,
+                sanitizedIsVerified,
+                sanitizedEpisode
+              );
+            }
+          } else {
+            // Handle clip matcher failure
+            console.error(`[ERROR] Clip matcher failed for ${file.path}: ${matchResult.error}`);
+            
+            const now = Math.floor(Date.now());
+            let publicImagePath = existingRecord?.verification_image_path || null; // Keep old image on error
+            const errorEpisodeInfo = "Processing Error"; // Use generic error message
+
+            const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
+            const sanitizedFilePath = sanitizeForSQLite(file.path);
+            const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime);
+            const sanitizedScanTime = sanitizeForSQLite(now);
+            const sanitizedImagePath = sanitizeForSQLite(publicImagePath);
+            const sanitizedErrorMessage = sanitizeForSQLite(errorEpisodeInfo);
+
+            if (existingRecord) {
+              console.log(`[DB] Updating record with error for ${file.path}`);
+              updateScannedFile.run(
+                sanitizedScanTime,
+                sanitizedImagePath,
+                0, // Match score
+                0, // Verified status
+                sanitizedErrorMessage, // Episode info
+                sanitizedModifiedTime,
+                sanitizedFilePath
+              );
+            } else {
+              console.log(`[DB] Inserting new record with error for ${file.path}`);
+              addScannedFile.run(
+                sanitizedLibraryId,
+                sanitizedFilePath,
+                sanitizedModifiedTime,
+                sanitizedScanTime,
+                sanitizedImagePath,
+                0, // Match score
+                0, // Verified status
+                sanitizedErrorMessage // Episode info
+              );
+            }
+            scanStatus.errors.push(`Failed to process ${file.path}: ${matchResult.error}`);
+          }
+        } // End if(shouldScan)
       } catch (error) {
         console.error(`[ERROR] Failed to process file ${file.path}:`, error);
         scanStatus.errors.push(`Failed to process ${file.path}: ${error.message}`);

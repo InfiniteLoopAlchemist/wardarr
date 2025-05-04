@@ -144,7 +144,7 @@ export default function HistoryPage() {
                   {file.file_path.split('/').pop()}
                 </div>
                 
-                {file.episode_info && (
+                {file.episode_info && file.episode_info !== 'Processing Error' && (
                   <div className="text-sm text-gray-400 mb-1">
                     {file.episode_info}
                   </div>

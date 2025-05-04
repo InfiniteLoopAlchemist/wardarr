@@ -361,7 +361,9 @@ export default function Dashboard() {
             
             <div className="mb-3 text-sm text-gray-400">
               <div>File: {latestScan.file_path.split('/').pop()}</div>
-              {latestScan.episode_info && <div>Episode: {latestScan.episode_info}</div>}
+              {latestScan.episode_info && latestScan.episode_info !== 'Processing Error' && (
+                <div>Episode: {latestScan.episode_info}</div>
+              )}
               <div>Scanned: {new Date(latestScan.last_scanned_time).toLocaleString()}</div>
             </div>
             
