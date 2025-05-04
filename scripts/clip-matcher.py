@@ -38,7 +38,7 @@ TEMP_DIR = 'temp'
 VERIFY_DIR = 'verification'
 
 # Frame extraction rate (1 frame per second)
-FRAME_RATE = 2
+FRAME_RATE = 1
 
 def search_tmdb_for_show(show_name, year=None):
     """Search TMDB for a show by name and optionally year."""
