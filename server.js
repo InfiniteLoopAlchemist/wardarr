@@ -143,7 +143,22 @@ if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true });
   console.log(`[SERVER] Created public directory: ${publicDir}`);
 }
+
+// Ensure matches directory exists
+const matchesDir = path.join(publicDir, 'matches');
+if (!fs.existsSync(matchesDir)) {
+  fs.mkdirSync(matchesDir, { recursive: true });
+  console.log(`[SERVER] Created matches directory: ${matchesDir}`);
+}
+
 app.use(express.static(publicDir));
+// Explicitly set CORS headers for image files
+app.use('/matches', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Cache-Control', 'no-cache');
+  next();
+});
 
 console.log('[SERVER] Added JSON parsing middleware and static file handling');
 
@@ -155,6 +170,7 @@ const addLibrary = db.prepare('INSERT INTO libraries (title, path, type) VALUES 
 // Database functions for scanned files
 const getScannedFiles = db.prepare('SELECT * FROM scanned_files');
 const getScannedFileByPath = db.prepare('SELECT * FROM scanned_files WHERE file_path = ?');
+const getLatestScannedFile = db.prepare('SELECT * FROM scanned_files ORDER BY last_scanned_time DESC LIMIT 1');
 const addScannedFile = db.prepare(`
   INSERT INTO scanned_files 
   (library_id, file_path, file_modified_time, last_scanned_time, verification_image_path, match_score, is_verified, episode_info) 
@@ -630,6 +646,44 @@ app.get('/api/history', (req, res) => {
 });
 console.log('[ROUTE] Registered route: GET /api/history');
 
+// GET /api/latest-verification - Get most recent verification
+app.get('/api/latest-verification', (req, res) => {
+  console.log('[ROUTE] GET /api/latest-verification');
+  try {
+    const latestFile = getLatestScannedFile.get();
+    console.log(`[ROUTE] Latest verification file: ${latestFile ? latestFile.file_path : 'None'}`);
+    
+    if (!latestFile) {
+      return res.json({ found: false });
+    }
+    
+    // Check if image exists
+    let imagePath = null;
+    if (latestFile.verification_image_path) {
+      imagePath = latestFile.verification_image_path;
+      // Ensure path starts with a slash
+      if (!imagePath.startsWith('/')) {
+        imagePath = '/' + imagePath;
+      }
+      console.log(`[ROUTE] Latest verification image: ${imagePath}`);
+    }
+    
+    res.json({
+      found: true,
+      file_path: latestFile.file_path,
+      verification_image_path: imagePath,
+      match_score: latestFile.match_score,
+      is_verified: latestFile.is_verified === 1,
+      episode_info: latestFile.episode_info,
+      last_scanned_time: latestFile.last_scanned_time
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to get latest verification:', error);
+    res.status(500).json({ error: 'Failed to get latest verification from database' });
+  }
+});
+console.log('[ROUTE] Registered route: GET /api/latest-verification');
+
 // Global variable to track scan status
 let scanStatus = {
   isScanning: false,
@@ -675,12 +729,14 @@ const findMediaFiles = async (dirPath, libraryId) => {
 };
 
 // Helper function to copy verification image to public folder
-const copyVerificationImage = async (sourcePath) => {
+const copyVerificationImage = async (sourcePath, episodeFilePath) => {
   if (!sourcePath) return null;
   
   try {
-    // Extract the filename from the source path
-    const filename = path.basename(sourcePath);
+    // Get a unique filename based on the episode file
+    const episodeFileName = path.basename(episodeFilePath || 'unknown');
+    const timestamp = Date.now();
+    const uniqueFilename = `match_${timestamp}_${episodeFileName.replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
     
     // Create a destination path in the public/matches folder
     const destDir = path.join(publicDir, 'matches');
@@ -688,13 +744,22 @@ const copyVerificationImage = async (sourcePath) => {
       fs.mkdirSync(destDir, { recursive: true });
     }
     
-    const destPath = path.join(destDir, filename);
+    const destPath = path.join(destDir, uniqueFilename);
+    
+    // Check if the source file exists
+    try {
+      await fs.promises.access(sourcePath, fs.constants.R_OK);
+    } catch (err) {
+      console.error(`[ERROR] Source verification image not found: ${sourcePath}`);
+      return null;
+    }
     
     // Copy the file
     await fs.promises.copyFile(sourcePath, destPath);
+    console.log(`[IMAGE] Copied verification image to: ${destPath}`);
     
     // Return the relative path for storing in the database
-    return `/matches/${filename}`;
+    return `/matches/${uniqueFilename}`;
   } catch (error) {
     console.error(`[ERROR] Failed to copy verification image:`, error);
     return null;
@@ -894,6 +959,9 @@ async function processScan(libraries) {
     scanStatus.totalFiles = allFiles.length;
     console.log(`[SCAN] Found ${allFiles.length} media files to process`);
     
+    // Track the latest successful match
+    let latestSuccessfulMatch = null;
+    
     // Process each file
     for (let i = 0; i < allFiles.length; i++) {
       const file = allFiles[i];
@@ -911,6 +979,18 @@ async function processScan(libraries) {
         // Skip if file hasn't changed since last scan
         if (existingRecord && existingRecord.file_modified_time === modifiedTime) {
           console.log(`[SCAN] Skipping unchanged file: ${file.path}`);
+          
+          // Track this as latest successful match if it has a verification image
+          if (existingRecord.verification_image_path) {
+            latestSuccessfulMatch = {
+              path: file.path,
+              imagePath: existingRecord.verification_image_path,
+              matchScore: existingRecord.match_score,
+              isVerified: existingRecord.is_verified,
+              episodeInfo: existingRecord.episode_info
+            };
+          }
+          
           continue;
         }
         
@@ -929,7 +1009,18 @@ async function processScan(libraries) {
             // Construct a predictable path to the best match image
             const bestMatchPath = path.join(matchResult.verificationPath, 'best_match.jpg');
             // Copy the image with a filename based on the episode name
-            verificationImagePath = await copyVerificationImage(bestMatchPath);
+            verificationImagePath = await copyVerificationImage(bestMatchPath, file.path);
+          }
+          
+          // Track this as the latest successful match
+          if (verificationImagePath) {
+            latestSuccessfulMatch = {
+              path: file.path,
+              imagePath: verificationImagePath,
+              matchScore: typeof matchResult.matchScore === 'number' ? matchResult.matchScore : 0,
+              isVerified: matchResult.verified === true,
+              episodeInfo: typeof matchResult.episode === 'string' ? matchResult.episode : fileName
+            };
           }
           
           // Ensure all values are valid SQLite types
@@ -1030,12 +1121,20 @@ async function processScan(libraries) {
       }
     }
     
-    // Update final status
+    // Update final status and store the latest successful match info
     scanStatus.processedFiles = allFiles.length;
     scanStatus.currentFile = '';
     scanStatus.isScanning = false;
     
+    // Add the latest match info to the status
+    if (latestSuccessfulMatch) {
+      scanStatus.latestMatch = latestSuccessfulMatch;
+    }
+    
     console.log(`[SCAN] Scan completed. Processed ${allFiles.length} files with ${scanStatus.errors.length} errors.`);
+    if (latestSuccessfulMatch) {
+      console.log(`[SCAN] Latest successful match: ${latestSuccessfulMatch.path}`);
+    }
   } catch (error) {
     console.error('[ERROR] Scan process failed:', error);
     scanStatus.isScanning = false;
