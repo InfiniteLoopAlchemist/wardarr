@@ -367,7 +367,6 @@ export default function Dashboard() {
             
             <div className="bg-black rounded overflow-hidden">
               <Image
-                key={latestScan.last_scanned_time}
                 src={`${latestScan.verification_image_path}?t=${latestScan.last_scanned_time}`}
                 alt="Verification"
                 className="w-full h-auto"
