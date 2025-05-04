@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface Library {
-  name: string;
+  id?: number;
+  title: string;
   path: string;
+  type: string;
 }
 
 interface DirectoryItem {
@@ -19,6 +21,8 @@ interface LibraryManagerProps {
 
 export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAdd }: LibraryManagerProps) {
   const [newLibraryPath, setNewLibraryPath] = useState('');
+  const [newLibraryTitle, setNewLibraryTitle] = useState('');
+  const [newLibraryType, setNewLibraryType] = useState<'movie' | 'tv'>('tv');
   const [directoryItems, setDirectoryItems] = useState<DirectoryItem[]>([]);
   const [currentPath, setCurrentPath] = useState('/');
   const [isDirectoryBrowserOpen, setIsDirectoryBrowserOpen] = useState(false);
@@ -26,6 +30,10 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
 
   const handleAddLibrary = async () => {
     if (!newLibraryPath) return;
+    if (!newLibraryTitle) {
+      setBrowseFetchError('Library title is required');
+      return;
+    }
 
     try {
       const response = await fetch('http://localhost:5000/api/libraries', {
@@ -34,13 +42,15 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: newLibraryPath.split('/').pop() || newLibraryPath,
-          path: newLibraryPath
+          title: newLibraryTitle,
+          path: newLibraryPath,
+          type: newLibraryType
         }),
       });
 
       if (response.ok) {
         setNewLibraryPath('');
+        setNewLibraryTitle('');
         onLibraryAdd();
         setIsDirectoryBrowserOpen(false);
       } else {
@@ -89,6 +99,10 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
 
   const handleSelectCurrentPath = () => {
     setNewLibraryPath(currentPath);
+    if (!newLibraryTitle) {
+      // Set a default title based on the directory name
+      setNewLibraryTitle(currentPath.split('/').pop() || currentPath);
+    }
     setIsDirectoryBrowserOpen(false);
   };
 
@@ -97,21 +111,62 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
       <h2 className="text-xl font-semibold mb-4 text-gray-800">Libraries</h2>
       
       <div className="mb-4">
-        <div className="flex gap-2">
+        <div className="mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Library Title</label>
           <input
             type="text"
-            value={newLibraryPath}
-            onChange={(e) => setNewLibraryPath(e.target.value)}
-            placeholder="Enter library path"
-            className="flex-grow p-2 border rounded text-gray-800"
+            value={newLibraryTitle}
+            onChange={(e) => setNewLibraryTitle(e.target.value)}
+            placeholder="Enter library title"
+            className="w-full p-2 border rounded text-gray-800"
           />
-          <button
-            onClick={handleOpenDirectoryBrowser}
-            className="bg-gray-200 text-gray-800 py-2 px-4 rounded hover:bg-gray-300"
-          >
-            Browse
-          </button>
         </div>
+        
+        <div className="mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Library Type</label>
+          <div className="flex gap-4">
+            <label className="inline-flex items-center">
+              <input
+                type="radio"
+                className="form-radio"
+                name="libraryType"
+                checked={newLibraryType === 'movie'}
+                onChange={() => setNewLibraryType('movie')}
+              />
+              <span className="ml-2">Movie</span>
+            </label>
+            <label className="inline-flex items-center">
+              <input
+                type="radio"
+                className="form-radio"
+                name="libraryType"
+                checked={newLibraryType === 'tv'}
+                onChange={() => setNewLibraryType('tv')}
+              />
+              <span className="ml-2">TV Show</span>
+            </label>
+          </div>
+        </div>
+        
+        <div className="mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Library Path</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newLibraryPath}
+              onChange={(e) => setNewLibraryPath(e.target.value)}
+              placeholder="Enter library path"
+              className="flex-grow p-2 border rounded text-gray-800"
+            />
+            <button
+              onClick={handleOpenDirectoryBrowser}
+              className="bg-gray-200 text-gray-800 py-2 px-4 rounded hover:bg-gray-300"
+            >
+              Browse
+            </button>
+          </div>
+        </div>
+        
         <button
           onClick={handleAddLibrary}
           className="mt-2 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
@@ -182,15 +237,18 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
         ) : (
           libraries.map((library) => (
             <button
-              key={library.path}
+              key={library.id || library.path}
               onClick={() => onLibrarySelect(library)}
-              className="w-full text-left p-2 hover:bg-gray-100 rounded text-gray-800"
+              className="w-full text-left p-2 hover:bg-gray-100 rounded text-gray-800 flex items-center"
             >
-              {library.name}
+              <span className="flex-grow">{library.title}</span>
+              <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700">
+                {library.type === 'movie' ? 'Movie' : 'TV'}
+              </span>
             </button>
           ))
         )}
       </div>
     </div>
   );
-} 
+}

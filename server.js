@@ -1,11 +1,54 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-// const { glob } = require('glob'); // Commented out
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+// import { glob } from 'glob'; // Commented out
+import Database from 'better-sqlite3';
+import { createServer } from 'http';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+
+// Get current directory name (equivalent to __dirname in CommonJS)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Initialize SQLite database
+const db = new Database('libraries.db', { verbose: console.log });
+
+// Create libraries table if it doesn't exist
+db.exec(`
+  CREATE TABLE IF NOT EXISTS libraries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    path TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('movie', 'tv'))
+  )
+`);
+
+// Create scanned_files table to track processed media files
+db.exec(`
+  CREATE TABLE IF NOT EXISTS scanned_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    library_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL UNIQUE,
+    file_modified_time INTEGER NOT NULL,
+    last_scanned_time INTEGER,
+    verification_image_path TEXT,
+    match_score REAL,
+    is_verified BOOLEAN,
+    episode_info TEXT,
+    FOREIGN KEY (library_id) REFERENCES libraries(id)
+  )
+`);
+
+// Create index for faster lookups
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_scanned_files_path ON scanned_files(file_path);
+  CREATE INDEX IF NOT EXISTS idx_scanned_files_library ON scanned_files(library_id);
+`);
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000; // Used in server.listen at the bottom of the file
 
 // Enhanced logging middleware
 const logRequest = (req, res, next) => {
@@ -64,7 +107,7 @@ app.use(cors({
 console.log('[SERVER] CORS middleware configured');
 
 // Track connections
-const server = require('http').createServer(app);
+const server = createServer(app);
 
 server.on('connection', (socket) => {
   console.log(`[CONNECTION] New connection from ${socket.remoteAddress}:${socket.remotePort}`);
@@ -80,7 +123,7 @@ server.on('connection', (socket) => {
 
 // Add middleware to parse JSON and handle errors
 app.use(express.json({
-  verify: (req, res, buf, encoding) => {
+  verify: (req, res, buf) => {
     try {
       JSON.parse(buf);
     } catch (e) {
@@ -101,8 +144,24 @@ app.use(express.static(publicDir));
 
 console.log('[SERVER] Added JSON parsing middleware and static file handling');
 
-// In-memory storage for libraries
-let libraries = [];
+// Database functions for libraries
+const getLibraries = db.prepare('SELECT * FROM libraries');
+// Removed unused getLibraryById
+const addLibrary = db.prepare('INSERT INTO libraries (title, path, type) VALUES (?, ?, ?)');
+
+// Database functions for scanned files
+const getScannedFiles = db.prepare('SELECT * FROM scanned_files');
+const getScannedFileByPath = db.prepare('SELECT * FROM scanned_files WHERE file_path = ?');
+const addScannedFile = db.prepare(`
+  INSERT INTO scanned_files 
+  (library_id, file_path, file_modified_time, last_scanned_time, verification_image_path, match_score, is_verified, episode_info) 
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const updateScannedFile = db.prepare(`
+  UPDATE scanned_files 
+  SET last_scanned_time = ?, verification_image_path = ?, match_score = ?, is_verified = ?, episode_info = ? 
+  WHERE file_path = ?
+`);
 
 // Helper function to validate a path exists
 const validatePath = async (filePath) => {
@@ -117,8 +176,15 @@ const validatePath = async (filePath) => {
 
 // GET /api/libraries
 app.get('/api/libraries', (req, res) => {
-  console.log('[ROUTE] GET /api/libraries - Returning:', libraries);
-  res.json(libraries);
+  console.log('[ROUTE] GET /api/libraries');
+  try {
+    const libraries = getLibraries.all();
+    console.log('[ROUTE] GET /api/libraries - Returning:', libraries);
+    res.json(libraries);
+  } catch (error) {
+    console.error('[ERROR] Failed to get libraries:', error);
+    res.status(500).json({ error: 'Failed to get libraries from database' });
+  }
 });
 console.log('[ROUTE] Registered route: GET /api/libraries');
 
@@ -130,14 +196,30 @@ app.post('/api/libraries', async (req, res) => {
     return res.status(400).json({ error: 'Missing path in request body' });
   }
   
+  if (!req.body.title) {
+    return res.status(400).json({ error: 'Missing title in request body' });
+  }
+  
+  if (!req.body.type || !['movie', 'tv'].includes(req.body.type)) {
+    return res.status(400).json({ error: 'Missing or invalid type in request body (must be "movie" or "tv")' });
+  }
+  
   // Validate the path exists
   const exists = await validatePath(req.body.path);
   if (!exists) {
     return res.status(400).json({ error: 'Library path does not exist or is not accessible' });
   }
   
-  libraries.push(req.body);
-  res.json({ message: 'Library added successfully' });
+  try {
+    const result = addLibrary.run(req.body.title, req.body.path, req.body.type);
+    res.json({ 
+      message: 'Library added successfully', 
+      id: result.lastInsertRowid 
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to add library:', error);
+    res.status(500).json({ error: 'Failed to add library to database' });
+  }
 });
 console.log('[ROUTE] Registered route: POST /api/libraries');
 
@@ -311,6 +393,37 @@ app.get('/api/path/:type/:encodedPath', async (req, res) => {
 console.log('[ROUTE] Registered backward-compatible routes: GET /api/shows, GET /api/seasons, GET /api/episodes');
 console.log('[ROUTE] Registered path-based route: GET /api/path/:type/:encodedPath');
 
+// GET /api/browse - Directory browser endpoint
+app.get('/api/browse', async (req, res) => {
+  const requestedPath = req.query.path || '/';
+  console.log(`[ROUTE] GET /api/browse`, { path: requestedPath });
+  
+  try {
+    // Check if path exists and is accessible
+    const exists = await validatePath(requestedPath);
+    if (!exists) {
+      return res.status(400).json({ error: `Directory not found or not accessible: ${requestedPath}` });
+    }
+    
+    // Read directory contents
+    const files = await fs.promises.readdir(requestedPath, { withFileTypes: true });
+    
+    // Convert to the expected format
+    const result = files.map(file => ({
+      name: file.name,
+      path: path.join(requestedPath, file.name),
+      isDirectory: file.isDirectory()
+    }));
+    
+    console.log(`[ROUTE] Found ${result.length} items in ${requestedPath}`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[ERROR] Error browsing directory: ${err.message}`);
+    res.status(500).json({ error: `Failed to browse directory: ${err.message}` });
+  }
+});
+console.log('[ROUTE] Registered route: GET /api/browse');
+
 // Add specialized hierarchical browsing paths that match the UI flow
 app.get('/api/browse/:level', async (req, res) => {
   const { level } = req.params;
@@ -324,9 +437,15 @@ app.get('/api/browse/:level', async (req, res) => {
   
   switch (level) {
     case 'libraries':
-      // Return the list of libraries
-      console.log('[ROUTE] Returning libraries list');
-      return res.json(libraries);
+      // Return the list of libraries from the database
+      try {
+        const libraries = getLibraries.all();
+        console.log('[ROUTE] Returning libraries list from database');
+        return res.json(libraries);
+      } catch (error) {
+        console.error('[ERROR] Failed to get libraries:', error);
+        return res.status(500).json({ error: 'Failed to get libraries from database' });
+      }
     
     case 'shows':
       // Shows within a library
@@ -378,11 +497,8 @@ app.post('/api/match', async (req, res) => {
     // Setup parameters for clip-matcher.py
     const clipMatcherPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
     
-    // Use child_process to run the Python script
-    const { spawn } = require('child_process');
-    
     // Create a promise to handle the async process
-    const matchPromise = new Promise((resolve, reject) => {
+    const matchPromise = new Promise((resolve) => {
       // Build command to run the Python script directly without using the wrapper
       const process = spawn('python3', [
         clipMatcherPath,
@@ -393,8 +509,6 @@ app.post('/api/match', async (req, res) => {
       ]);
       
       let stdoutData = '';
-      let stderrData = '';
-      
       // Capture stdout data
       process.stdout.on('data', (data) => {
         const dataStr = data.toString();
@@ -405,7 +519,6 @@ app.post('/api/match', async (req, res) => {
       // Capture stderr data
       process.stderr.on('data', (data) => {
         const dataStr = data.toString();
-        stderrData += dataStr;
         console.error(`[CLIP-MATCHER ERROR] ${dataStr.trim()}`);
       });
       
@@ -428,6 +541,73 @@ app.post('/api/match', async (req, res) => {
               const match = matchScoreLine.match(/Best match: ([\d.]+)/);
               if (match) bestMatch = parseFloat(match[1]);
             }
+
+
+// Add a test route
+app.get('/test', (req, res) => {
+  console.log('[ROUTE] Handling /test request');
+  res.status(200).send('Server test route is working!');
+});
+console.log('[ROUTE] Registered route: GET /test');
+
+// Add a root path handler
+app.get('/', (req, res) => {
+  console.log('[ROUTE] Handling / request');
+  res.send('TV Show API Server - Test Mode');
+});
+console.log('[ROUTE] Registered route: GET /');
+
+// Add global error handling middleware
+app.use((err, req, res) => {
+  console.error(`[SERVER ERROR] ${err.stack}`);
+  res.status(500).send('Something broke!');
+});
+
+// Handle 404 errors for any routes not matched
+app.use((req, res) => {
+  console.error(`[404 ERROR] No route found for ${req.method} ${req.url}`);
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.url}` });
+});
+
+console.log('[SERVER] Attempting to start server listening...');
+
+// Use the HTTP server instead of app.listen
+server.listen(PORT, () => {
+  console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
+  console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
+}); 
+
+// Add global error handlers
+process.on('uncaughtException', (err) => {
+  console.error(`[FATAL ERROR] Uncaught exception: ${err.message}`);
+  console.error(err.stack);
+  process.exit(1); //mandatory (as per the Node.js docs)
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL ERROR] Unhandled Rejection at:', reason);
+});
+
+// Log process events
+process.on('exit', (code) => {
+  console.log(`[PROCESS] Process exiting with code: ${code}`);
+});
+
+process.on('SIGINT', () => {
+  console.log('[PROCESS] Received SIGINT, shutting down gracefully');
+  server.close(() => {
+    console.log('[SERVER] Closed all connections');
+    process.exit(0);
+  });
+});
+
+process.on('SIGTERM', () => {
+  console.log('[PROCESS] Received SIGTERM, shutting down gracefully');
+  server.close(() => {
+    console.log('[SERVER] Closed all connections');
+    process.exit(0);
+  });
+});
             
             // Extract episode detection
             let episode = '';
@@ -485,7 +665,7 @@ app.post('/api/match', async (req, res) => {
       // Handle process errors
       process.on('error', (err) => {
         console.error(`[CLIP-MATCHER] Failed to start process: ${err.message}`);
-        reject({ success: false, error: `Failed to start process: ${err.message}` });
+        resolve({ success: false, error: `Failed to start process: ${err.message}` });
       });
     });
     
@@ -500,69 +680,234 @@ app.post('/api/match', async (req, res) => {
 });
 console.log('[ROUTE] Registered route: POST /api/match');
 
-// Add a test route
-app.get('/test', (req, res) => {
-  console.log('[ROUTE] Handling /test request');
-  res.status(200).send('Server test route is working!');
+// GET /api/history - Get scan history
+app.get('/api/history', (req, res) => {
+  console.log('[ROUTE] GET /api/history');
+  try {
+    const history = getScannedFiles.all();
+    console.log(`[ROUTE] Returning ${history.length} scanned files`);
+    res.json(history);
+  } catch (error) {
+    console.error('[ERROR] Failed to get scan history:', error);
+    res.status(500).json({ error: 'Failed to get scan history from database' });
+  }
 });
-console.log('[ROUTE] Registered route: GET /test');
+console.log('[ROUTE] Registered route: GET /api/history');
 
-// Add a root path handler
-app.get('/', (req, res) => {
-  console.log('[ROUTE] Handling / request');
-  res.send('TV Show API Server - Test Mode');
+// Global variable to track scan status
+let scanStatus = {
+  isScanning: false,
+  totalFiles: 0,
+  processedFiles: 0,
+  currentFile: '',
+  startTime: null,
+  errors: []
+};
+
+// Helper function to find all media files in a directory recursively
+const findMediaFiles = async (dirPath, libraryId) => {
+  const videoExtensions = ['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv'];
+  const results = [];
+  
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      
+      if (entry.isDirectory()) {
+        // Recursively scan subdirectories
+        const subResults = await findMediaFiles(fullPath, libraryId);
+        results.push(...subResults);
+      } else {
+        // Check if this is a video file
+        const ext = path.extname(entry.name).toLowerCase();
+        if (videoExtensions.includes(ext)) {
+          results.push({
+            path: fullPath,
+            libraryId: libraryId
+          });
+        }
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error(`[ERROR] Error scanning directory ${dirPath}:`, error);
+    return results;
+  }
+};
+
+// Helper function to copy verification image to public folder
+const copyVerificationImage = async (sourcePath) => {
+  if (!sourcePath) return null;
+  
+  try {
+    // Extract the filename from the source path
+    const filename = path.basename(sourcePath);
+    
+    // Create a destination path in the public/matches folder
+    const destDir = path.join(publicDir, 'matches');
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    const destPath = path.join(destDir, filename);
+    
+    // Copy the file
+    await fs.promises.copyFile(sourcePath, destPath);
+    
+    // Return the relative path for storing in the database
+    return `/matches/${filename}`;
+  } catch (error) {
+    console.error(`[ERROR] Failed to copy verification image:`, error);
+    return null;
+  }
+};
+
+// POST /api/scan - Start a scan of all libraries
+app.post('/api/scan', async (req, res) => {
+  console.log('[ROUTE] POST /api/scan');
+  
+  // Check if a scan is already in progress
+  if (scanStatus.isScanning) {
+    return res.status(409).json({ 
+      error: 'A scan is already in progress',
+      status: scanStatus
+    });
+  }
+  
+  try {
+    // Reset scan status
+    scanStatus = {
+      isScanning: true,
+      totalFiles: 0,
+      processedFiles: 0,
+      currentFile: '',
+      startTime: Date.now(),
+      errors: []
+    };
+    
+    // Get all libraries
+    const libraries = getLibraries.all();
+    
+    // Start the scan process asynchronously
+    processScan(libraries).catch(error => {
+      console.error('[ERROR] Scan process failed:', error);
+      scanStatus.isScanning = false;
+      scanStatus.errors.push(`Scan process failed: ${error.message}`);
+    });
+    
+    // Return immediately with initial status
+    res.json({ 
+      message: 'Scan started',
+      status: scanStatus
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to start scan:', error);
+    scanStatus.isScanning = false;
+    res.status(500).json({ error: 'Failed to start scan' });
+  }
 });
-console.log('[ROUTE] Registered route: GET /');
+console.log('[ROUTE] Registered route: POST /api/scan');
 
-// Add global error handling middleware
-app.use((err, req, res, next) => {
-  console.error(`[SERVER ERROR] ${err.stack}`);
-  res.status(500).send('Something broke!');
+// GET /api/scan/status - Get current scan status
+app.get('/api/scan/status', (req, res) => {
+  console.log('[ROUTE] GET /api/scan/status');
+  res.json(scanStatus);
 });
+console.log('[ROUTE] Registered route: GET /api/scan/status');
 
-// Handle 404 errors for any routes not matched
-app.use((req, res) => {
-  console.error(`[404 ERROR] No route found for ${req.method} ${req.url}`);
-  res.status(404).json({ error: `Route not found: ${req.method} ${req.url}` });
-});
-
-console.log('[SERVER] Attempting to start server listening...');
-
-// Use the HTTP server instead of app.listen
-server.listen(PORT, () => {
-  console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
-  console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
-}); 
-
-// Add global error handlers
-process.on('uncaughtException', (err) => {
-  console.error(`[FATAL ERROR] Uncaught exception: ${err.message}`);
-  console.error(err.stack);
-  process.exit(1); //mandatory (as per the Node.js docs)
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[FATAL ERROR] Unhandled Rejection at:', promise);
-  console.error('[FATAL ERROR] Reason:', reason);
-});
-
-// Log process events
-process.on('exit', (code) => {
-  console.log(`[PROCESS] Process exiting with code: ${code}`);
-});
-
-process.on('SIGINT', () => {
-  console.log('[PROCESS] Received SIGINT, shutting down gracefully');
-  server.close(() => {
-    console.log('[SERVER] Closed all connections');
-    process.exit(0);
-  });
-});
-
-process.on('SIGTERM', () => {
-  console.log('[PROCESS] Received SIGTERM, shutting down gracefully');
-  server.close(() => {
-    console.log('[SERVER] Closed all connections');
-    process.exit(0);
-  });
-}); 
+// Helper function to process the scan asynchronously
+async function processScan(libraries) {
+  try {
+    // Find all media files in all libraries
+    let allFiles = [];
+    
+    for (const library of libraries) {
+      console.log(`[SCAN] Finding media files in library: ${library.title} (${library.path})`);
+      const libraryFiles = await findMediaFiles(library.path, library.id);
+      allFiles.push(...libraryFiles);
+    }
+    
+    scanStatus.totalFiles = allFiles.length;
+    console.log(`[SCAN] Found ${allFiles.length} media files to process`);
+    
+    // Process each file
+    for (let i = 0; i < allFiles.length; i++) {
+      const file = allFiles[i];
+      scanStatus.processedFiles = i;
+      scanStatus.currentFile = file.path;
+      
+      try {
+        // Check if file has been scanned before
+        const existingRecord = getScannedFileByPath.get(file.path);
+        
+        // Get file stats to check modification time
+        const stats = await fs.promises.stat(file.path);
+        const modifiedTime = Math.floor(stats.mtimeMs);
+        
+        // Skip if file hasn't changed since last scan
+        if (existingRecord && existingRecord.file_modified_time === modifiedTime) {
+          console.log(`[SCAN] Skipping unchanged file: ${file.path}`);
+          continue;
+        }
+        
+        console.log(`[SCAN] Processing file: ${file.path}`);
+        
+        // Run the clip-matcher.py script
+        const matchResult = await runClipMatcher(file.path);
+        
+        if (matchResult.success) {
+          // Copy verification image to public folder
+          const publicImagePath = await copyVerificationImage(
+            path.join(matchResult.verificationPath, 'best_match.jpg')
+          );
+          
+          // Update or insert record in database
+          const now = Math.floor(Date.now());
+          
+          if (existingRecord) {
+            // Update existing record
+            updateScannedFile.run(
+              now,
+              publicImagePath,
+              matchResult.matchScore,
+              matchResult.verified,
+              matchResult.episode,
+              file.path
+            );
+          } else {
+            // Insert new record
+            addScannedFile.run(
+              file.libraryId,
+              file.path,
+              modifiedTime,
+              now,
+              publicImagePath,
+              matchResult.matchScore,
+              matchResult.verified,
+              matchResult.episode
+            );
+          }
+        } else {
+          scanStatus.errors.push(`Failed to process ${file.path}: ${matchResult.error}`);
+        }
+      } catch (error) {
+        console.error(`[ERROR] Failed to process file ${file.path}:`, error);
+        scanStatus.errors.push(`Failed to process ${file.path}: ${error.message}`);
+      }
+    }
+    
+    // Update final status
+    scanStatus.processedFiles = allFiles.length;
+    scanStatus.currentFile = '';
+    scanStatus.isScanning = false;
+    
+    console.log(`[SCAN] Scan completed. Processed ${allFiles.length} files with ${scanStatus.errors.length} errors.`);
+  } catch (error) {
+    console.error('[ERROR] Scan process failed:', error);
+    scanStatus.isScanning = false;
+    scanStatus.errors.push(`Scan process failed: ${error.message}`);
+  }
+}
