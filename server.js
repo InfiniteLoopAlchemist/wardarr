@@ -859,6 +859,7 @@ app.post('/api/match', async (req, res) => {
       ]);
       
       let stdoutData = '';
+      let stderrData = '';
       // Capture stdout data
       process.stdout.on('data', (data) => {
         const dataStr = data.toString();
@@ -869,6 +870,7 @@ app.post('/api/match', async (req, res) => {
       // Capture stderr data
       process.stderr.on('data', (data) => {
         const dataStr = data.toString();
+        stderrData += dataStr;
         console.error(`[CLIP-MATCHER ERROR] ${dataStr.trim()}`);
       });
       
@@ -920,7 +922,7 @@ app.post('/api/match', async (req, res) => {
               bestMatchingStill = bestStillLine.replace('Best matching still:', '').trim();
             }
             
-            resolve({
+            const result = {
               success: true,
               verified: isVerified,
               matchScore: bestMatch,
@@ -929,18 +931,30 @@ app.post('/api/match', async (req, res) => {
               verificationPath: verificationPath,
               bestStill: bestMatchingStill,
               usingGPU: stdoutData.includes('Using device: cuda')
-            });
+            };
+            
+            console.log(`[CLIP-MATCHER] Processing complete for: ${path.basename(episodePath)}`);
+            console.log(`[CLIP-MATCHER] Match score: ${bestMatch}, Verified: ${isVerified}`);
+            
+            resolve(result);
           } catch (error) {
             console.error(`[CLIP-MATCHER] Error parsing results: ${error.message}`);
+            // Log both stdout and stderr on parsing error too
+            console.error(`[CLIP-MATCHER STDOUT on PARSE ERROR]: ${stdoutData}`); 
+            console.error(`[CLIP-MATCHER STDERR on PARSE ERROR]: ${stderrData}`);
             resolve({ 
               success: false, 
-              error: 'Error parsing results'
+              error: `Error parsing results: ${error.message}`
             });
           }
         } else {
+          // Log both stdout and stderr when exit code is non-zero
+          console.error(`[CLIP-MATCHER FAILED] Exit Code: ${code}`);
+          console.error(`[CLIP-MATCHER FAILED STDOUT]: ${stdoutData}`);
+          console.error(`[CLIP-MATCHER FAILED STDERR]: ${stderrData}`);
           resolve({ 
             success: false, 
-            error: `Process exited with code ${code}`
+            error: `Process exited with code ${code}: ${stderrData}`
           });
         }
       });
@@ -1430,12 +1444,19 @@ async function runClipMatcher(filePath) {
           resolve(result);
         } catch (error) {
           console.error(`[CLIP-MATCHER] Error parsing results: ${error.message}`);
+          // Log both stdout and stderr on parsing error too
+          console.error(`[CLIP-MATCHER STDOUT on PARSE ERROR]: ${stdoutData}`); 
+          console.error(`[CLIP-MATCHER STDERR on PARSE ERROR]: ${stderrData}`);
           resolve({ 
             success: false, 
             error: `Error parsing results: ${error.message}`
           });
         }
       } else {
+        // Log both stdout and stderr when exit code is non-zero
+        console.error(`[CLIP-MATCHER FAILED] Exit Code: ${code}`);
+        console.error(`[CLIP-MATCHER FAILED STDOUT]: ${stdoutData}`);
+        console.error(`[CLIP-MATCHER FAILED STDERR]: ${stderrData}`);
         resolve({ 
           success: false, 
           error: `Process exited with code ${code}: ${stderrData}`

@@ -17,7 +17,7 @@ public/verification
 /ib
 # testing
 /coverage
-
+.env
 # next.js
 /.next/
 /out/

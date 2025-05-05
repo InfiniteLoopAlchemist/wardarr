@@ -539,11 +539,13 @@ def main():
     # Process the media file with error handling
     try:
         is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict, args.early_stop)
-        return 0 if is_match else 1
+        # Exit with 0 if match, 1 if no match (standard non-error exit)
+        sys.exit(0 if is_match else 1)
     except Exception as e:
-        print(f"ERROR: Failed to process media file: {str(e)}")
-        traceback.print_exc()
-        return 1
+        print(f"ERROR: Unhandled exception in main execution: {str(e)}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr) # Print full traceback to stderr
+        sys.exit(2) # Use a different exit code for unexpected errors
 
 if __name__ == '__main__':
-    sys.exit(main()) 
+    # Removed sys.exit(main()) call from here, handled inside main()
+    main() 
