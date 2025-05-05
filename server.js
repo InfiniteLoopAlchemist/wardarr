@@ -1382,8 +1382,8 @@ console.log('[ROUTE] Registered route: POST /api/scan');
 
 // GET /api/scan/status - Get current scan status
 app.get('/api/scan/status', (req, res) => {
-  console.log('[ROUTE] GET /api/scan/status');
-  
+  // console.log('[ROUTE] GET /api/scan/status'); // Commented out
+
   // If we're not scanning, try to get the latest verification from the database
   if (!scanStatus.isScanning && !scanStatus.latestMatch) {
     try {
@@ -1414,7 +1414,7 @@ app.get('/api/scan/status', (req, res) => {
   
   res.json(scanStatus);
 });
-console.log('[ROUTE] Registered route: GET /api/scan/status');
+// console.log('[ROUTE] Registered route: GET /api/scan/status'); // Commented out registration log
 
 // Helper function to run the clip-matcher.py script
 async function runClipMatcher(filePath) {
