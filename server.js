@@ -16,14 +16,18 @@ const __dirname = path.dirname(__filename);
 const db = new Database('libraries.db', { verbose: console.log });
 
 // Update the clip-matcher.py default threshold
-const clipMatcherThreshold = 0.90;
-const clipMatcherEarlyStop = 0.98;
+const clipMatcherThreshold = 0.93;
+const clipMatcherEarlyStop = 0.96;
 const clipMatcherDefaultPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
-let clipMatcherContent = fs.readFileSync(clipMatcherDefaultPath, 'utf8');
-clipMatcherContent = clipMatcherContent.replace(/SIMILARITY_THRESHOLD = 0\.\d+/, `SIMILARITY_THRESHOLD = ${clipMatcherThreshold}`);
-clipMatcherContent = clipMatcherContent.replace(/EARLY_STOP_THRESHOLD = 0\.\d+/, `EARLY_STOP_THRESHOLD = ${clipMatcherEarlyStop}`);
-fs.writeFileSync(clipMatcherDefaultPath, clipMatcherContent);
-console.log(`[SERVER] Updated clip-matcher.py default threshold to ${clipMatcherThreshold} and early stop to ${clipMatcherEarlyStop}`);
+try {
+    let clipMatcherContent = fs.readFileSync(clipMatcherDefaultPath, 'utf8');
+    clipMatcherContent = clipMatcherContent.replace(/SIMILARITY_THRESHOLD = 0\.\d+/, `SIMILARITY_THRESHOLD = ${clipMatcherThreshold}`);
+    clipMatcherContent = clipMatcherContent.replace(/EARLY_STOP_THRESHOLD = 0\.\d+/, `EARLY_STOP_THRESHOLD = ${clipMatcherEarlyStop}`);
+    fs.writeFileSync(clipMatcherDefaultPath, clipMatcherContent);
+    console.log(`[SERVER] Updated clip-matcher.py default threshold to ${clipMatcherThreshold} and early stop to ${clipMatcherEarlyStop}`);
+} catch (err) {
+    console.error('[ERROR] Failed to update clip-matcher.py defaults:', err);
+}
 
 // Create libraries table if it doesn't exist
 db.exec(`
@@ -31,7 +35,8 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     path TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('movie', 'tv'))
+    type TEXT NOT NULL CHECK(type IN ('movie', 'tv')),
+    is_enabled INTEGER DEFAULT 1 NOT NULL CHECK(is_enabled IN (0, 1))
   )
 `);
 
@@ -47,7 +52,7 @@ db.exec(`
     match_score REAL,
     is_verified BOOLEAN,
     episode_info TEXT,
-    FOREIGN KEY (library_id) REFERENCES libraries(id)
+    FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
   )
 `);
 
@@ -573,6 +578,123 @@ app.post('/api/libraries', async (req, res) => {
 });
 console.log('[ROUTE] Registered route: POST /api/libraries');
 
+// PUT /api/libraries/:id - Update a library
+app.put('/api/libraries/:id', async (req, res) => {
+  const libraryId = parseInt(req.params.id, 10);
+  console.log(`[ROUTE] PUT /api/libraries/${libraryId}`, req.body);
+
+  const { title, path: libraryPath, type, is_enabled } = req.body;
+
+  // Basic validation
+  if (isNaN(libraryId)) {
+    return res.status(400).json({ error: 'Invalid library ID' });
+  }
+  // Check if *at least one* valid field is provided for update
+  const providedFields = [title, libraryPath, type, is_enabled].filter(val => val !== undefined);
+  if (providedFields.length === 0) {
+      return res.status(400).json({ error: 'No update fields provided (title, path, type, or is_enabled)' });
+  }
+  
+  // Validate the fields that *are* provided
+  if (type && !['movie', 'tv'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid type (must be "movie" or "tv")' });
+  }
+  if (is_enabled !== undefined && ![0, 1, true, false].includes(is_enabled)) {
+       return res.status(400).json({ error: 'Invalid is_enabled value (must be 0, 1, true, or false)' });
+  }
+  if (title !== undefined && typeof title !== 'string' || title === '') { // Check if title is provided but empty
+       return res.status(400).json({ error: 'Title cannot be empty' });
+  }
+  if (libraryPath !== undefined && typeof libraryPath !== 'string' || libraryPath === '') { // Check if path is provided but empty
+       return res.status(400).json({ error: 'Path cannot be empty' });
+  }
+
+  // Validate path existence only if it's actually being updated
+  if (libraryPath) {
+      const exists = await validatePath(libraryPath);
+      if (!exists) {
+          return res.status(400).json({ error: 'Library path does not exist or is not accessible' });
+      }
+  }
+
+  // Build the update query dynamically
+  let setClauses = [];
+  let params = [];
+  if (title) {
+      setClauses.push('title = ?');
+      params.push(title);
+  }
+  if (libraryPath) {
+      setClauses.push('path = ?');
+      params.push(libraryPath);
+  }
+  if (type) {
+      setClauses.push('type = ?');
+      params.push(type);
+  }
+  if (is_enabled !== undefined) {
+      setClauses.push('is_enabled = ?');
+      params.push(is_enabled === true || is_enabled === 1 ? 1 : 0); // Ensure 0 or 1
+  }
+
+  if (setClauses.length === 0) {
+       return res.status(400).json({ error: 'No valid update fields provided' }); // Should be caught earlier, but safety check
+  }
+
+  params.push(libraryId);
+  const sql = `UPDATE libraries SET ${setClauses.join(', ')} WHERE id = ?`;
+
+  try {
+    const stmt = db.prepare(sql);
+    const result = stmt.run(...params);
+
+    if (result.changes === 0) {
+        return res.status(404).json({ error: 'Library not found or no changes made' });
+    }
+
+    // Fetch the updated library to return it
+    const getLibraryById = db.prepare('SELECT * FROM libraries WHERE id = ?');
+    const updatedLibrary = getLibraryById.get(libraryId);
+
+    res.json({ 
+        message: 'Library updated successfully', 
+        library: updatedLibrary 
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to update library:', error);
+    res.status(500).json({ error: 'Failed to update library in database' });
+  }
+});
+console.log('[ROUTE] Registered route: PUT /api/libraries/:id');
+
+// DELETE /api/libraries/:id - Delete a library
+app.delete('/api/libraries/:id', (req, res) => {
+  const libraryId = parseInt(req.params.id, 10);
+  console.log(`[ROUTE] DELETE /api/libraries/${libraryId}`);
+
+  if (isNaN(libraryId)) {
+    return res.status(400).json({ error: 'Invalid library ID' });
+  }
+
+  try {
+    // Since we added ON DELETE CASCADE, deleting the library automatically deletes associated scanned_files
+    const deleteLibrary = db.prepare('DELETE FROM libraries WHERE id = ?');
+    const result = deleteLibrary.run(libraryId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Library not found' });
+    }
+
+    console.log(`[DB] Deleted library ${libraryId} and associated scanned files (cascade).`);
+    res.status(200).json({ message: 'Library deleted successfully' });
+  
+  } catch (error) {
+    console.error('[ERROR] Failed to delete library:', error);
+    res.status(500).json({ error: 'Failed to delete library from database' });
+  }
+});
+console.log('[ROUTE] Registered route: DELETE /api/libraries/:id');
+
 // GET /api/content/:type
 app.get('/api/content/:type', async (req, res) => {
   const contentType = req.params.type;  // shows, seasons, or episodes
@@ -854,8 +976,8 @@ app.post('/api/match', async (req, res) => {
         clipMatcherPath,
         episodePath,
         '--max-stills', '5',
-        '--threshold', '0.90',
-        '--early-stop', '0.98'
+        '--threshold', '0.93',
+        '--early-stop', '0.96'
       ]);
       
       let stdoutData = '';
@@ -1341,8 +1463,8 @@ async function runClipMatcher(filePath) {
       clipMatcherPath,
       filePath,
       '--max-stills', '5',
-      '--threshold', '0.90',
-      '--early-stop', '0.98'
+      '--threshold', '0.93',
+      '--early-stop', '0.96'
     ]);
     
     let stdoutData = '';
@@ -1488,11 +1610,21 @@ async function processScan(libraries) {
   // Reset stopRequested flag at the beginning of a new scan
   scanStatus.stopRequested = false; 
   try {
-    // Find all media files in all libraries
+    // Find all media files in all *ENABLED* libraries
     let allFiles = [];
-    
-    for (const library of libraries) {
-      console.log(`[SCAN] Finding media files in library: ${library.title} (${library.path})`);
+    const enabledLibraries = libraries.filter(lib => lib.is_enabled === 1);
+    if (enabledLibraries.length === 0) {
+      console.log('[SCAN] No enabled libraries found. Scan aborted.');
+      scanStatus.isScanning = false;
+      scanStatus.processedFiles = 0;
+      scanStatus.totalFiles = 0;
+      return; // Exit if no enabled libraries
+    }
+
+    console.log(`[SCAN] Found ${enabledLibraries.length} enabled libraries to scan.`);
+
+    for (const library of enabledLibraries) {
+      console.log(`[SCAN] Finding media files in enabled library: ${library.title} (${library.path})`);
       const libraryFiles = await findMediaFiles(library.path, library.id);
       allFiles.push(...libraryFiles);
     }

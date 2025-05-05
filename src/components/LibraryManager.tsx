@@ -14,8 +14,8 @@ interface DirectoryItem {
 }
 
 interface LibraryManagerProps {
-  libraries: Library[];
-  onLibrarySelect: (library: Library) => void;
+  libraries?: Library[];
+  onLibrarySelect?: (library: Library) => void;
   onLibraryAdd: () => void;
 }
 
@@ -231,24 +231,29 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
         </div>
       )}
 
-      <div className="space-y-2">
-        {libraries.length === 0 ? (
-          <div className="text-gray-500 text-center p-2">No libraries added yet</div>
-        ) : (
-          libraries.map((library) => (
+      {libraries && libraries.length > 0 && (
+        <div className="mt-6 space-y-2">
+          <h3 className="text-lg font-semibold mb-2 text-gray-700">Existing Libraries</h3>
+          {libraries.map((library) => (
             <button
               key={library.id || library.path}
-              onClick={() => onLibrarySelect(library)}
+              onClick={() => onLibrarySelect && onLibrarySelect(library)}
               className="w-full text-left p-2 hover:bg-gray-100 rounded text-gray-800 flex items-center"
+              disabled={!onLibrarySelect}
             >
               <span className="flex-grow">{library.title}</span>
               <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700">
                 {library.type === 'movie' ? 'Movie' : 'TV'}
               </span>
             </button>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
+      
+      {libraries && libraries.length === 0 && (
+        <div className="mt-6 text-gray-500 text-center p-2">No libraries added yet</div>
+      )}
+
     </div>
   );
 }
