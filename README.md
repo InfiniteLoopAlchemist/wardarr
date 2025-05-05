@@ -1,14 +1,40 @@
-# Wardarr: TV Show Library Manager
+# Wardarr: TV Show Library Manager & Verification
 
-Wardarr is a simple web application for managing and streaming TV show libraries, particularly designed for libraries in the format used by Sonarr, Radarr, and similar media management tools.
+Wardarr is a web application for managing TV show libraries and verifying episodes using TMDB stills.
+
+## Project Status (Alpha)
+
+**This is a work in progress and currently in an alpha state.**
+
+*   **Started:** May 2024 (Just a few days ago!)
+*   **Motivation:** This is a personal "vibe code" project.
+*   **Experience:** Built by a developer with 6 years of programming experience (previous projects include a weather/electricity monitoring app built around the GPT-4 launch).
+*   **Known Issues:** Expect rough edges and incomplete features.
+*   **Future Plans:** Finish this README, potentially release a Docker Compose setup for easier deployment.
+
+## Requirements
+
+*   **Node.js:** 16.x or higher
+*   **npm or yarn**
+*   **Python 3:** For the verification script (`scripts/clip-matcher.py`)
+*   **Python Dependencies:** See `requirements.txt` (install via `pip install -r requirements.txt`)
+*   **FFmpeg:** Must be installed and available in your system's PATH for frame extraction.
+*   **TMDB API Key:** You **MUST** create a `.env` file in the project root with your The Movie Database (TMDB) API key:
+    ```.env
+    TMDB_API_KEY=YOUR_ACTUAL_API_KEY_HERE
+    ```
+*   **GPU (Recommended):** While the verification script can run on a CPU, processing will be **significantly faster** with a dedicated GPU. 
+    *   **NVIDIA GPUs (CUDA):** Generally provide the best performance.
+    *   **Apple Silicon (MPS):** May work (was tested previously on M1), but primary development is now Linux/NVIDIA, so MPS support might vary.
 
 ## Features
 
-- **Library Management**: Add and manage multiple TV show libraries
-- **Directory Browser**: Easily browse your file system to find TV show libraries
-- **Show Discovery**: Automatically detect TV shows in your libraries
-- **Episode Browsing**: Browse episodes by season
-- **Video Streaming**: Stream video files directly in the browser
+*   Library Management: Add TV show libraries.
+*   Directory Browser: Browse file system.
+*   Show/Season/Episode Browsing: Navigate library structure.
+*   **Episode Verification:** Uses TMDB stills and CLIP image similarity to verify episodes.
+*   Scan History & Status: Track scanned files and view current scan progress.
+*   Settings: Manage application settings (e.g., reset scan history).
 
 ## Tech Stack
 
@@ -16,23 +42,31 @@ Wardarr is a simple web application for managing and streaming TV show libraries
 - **Backend**: Node.js, Express
 - **File Handling**: Node.js fs module, glob pattern matching
 
-## Prerequisites
-
-- Node.js 16.x or higher
-- npm or yarn
-
 ## Installation
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/wardarr.git
-   cd wardarr
-   ```
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/yourusername/wardarr.git # Replace with your actual repo URL
+    cd wardarr
+    ```
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+2.  Install Node.js dependencies:
+    ```bash
+    npm install 
+    # or
+    # yarn install
+    ```
+
+3.  Install Python dependencies (preferably in a virtual environment):
+    ```bash
+    # python -m venv .venv # Optional: Create virtual env
+    # source .venv/bin/activate # Optional: Activate virtual env
+    pip install -r requirements.txt
+    ```
+
+4.  **Create `.env` file:** Create a file named `.env` in the project root and add your TMDB API key as shown in the Requirements section.
+
+5.  **Ensure FFmpeg is installed** and accessible in your PATH.
 
 ## Running the Application
 
@@ -66,8 +100,8 @@ Wardarr is a simple web application for managing and streaming TV show libraries
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 ## Author
 
-Your Name
+John "InfiniteLoopAlchemist" Floyd
