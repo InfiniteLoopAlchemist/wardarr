@@ -973,11 +973,21 @@ app.post('/api/match', async (req, res) => {
       
       let stdoutData = '';
       let stderrData = '';
+      let jsonOutput = null;
+      let verificationPath = null; // Initialize verificationPath
+      
       // Capture stdout data
       process.stdout.on('data', (data) => {
         const dataStr = data.toString();
         stdoutData += dataStr;
         console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
+        
+        // Try to extract the verification path from the output
+        const verifyPathMatch = dataStr.match(/Verification images saved to:\s*(.+)/);
+        if (verifyPathMatch && verifyPathMatch[1]) {
+          verificationPath = verifyPathMatch[1].trim();
+          console.log(`[CLIP-MATCHER] Detected verification path from stdout: ${verificationPath}`);
+        }
       });
       
       // Capture stderr data
@@ -985,97 +995,99 @@ app.post('/api/match', async (req, res) => {
         const dataStr = data.toString();
         stderrData += dataStr;
         console.error(`[CLIP-MATCHER ERROR] ${dataStr.trim()}`);
+        
+        // Try to extract verification path from error output too
+        const verifyPathMatch = dataStr.match(/Verification images saved to:\s*(.+)/);
+        if (verifyPathMatch && verifyPathMatch[1]) {
+          verificationPath = verifyPathMatch[1].trim();
+          console.log(`[CLIP-MATCHER] Detected verification path from stderr: ${verificationPath}`);
+        }
       });
       
-      // Handle process completion
+      // Handle process exit
       process.on('close', (code) => {
-        console.log(`[CLIP-MATCHER] Process exited with code ${code}`);
+        console.log(`[CLIP-MATCHER] Process exited with code ${code} for file: ${episodePath}`);
+        console.log(`[CLIP-MATCHER] verificationPath at close: ${verificationPath || 'null'}`);
         
-        if (code === 0) {
-          try {
-            // Extract only the important information from the output
-            const lines = stdoutData.split('\n');
-            
-            // Extract match status
-            const isVerified = stdoutData.includes('✓ VERIFIED');
-            
-            // Extract best match score
-            let bestMatch = 0;
-            const matchScoreLine = lines.find(line => line.includes('Best match:'));
-            if (matchScoreLine) {
-              const match = matchScoreLine.match(/Best match: ([\d.]+)/);
-              if (match) bestMatch = parseFloat(match[1]);
-            }
-
-            // Extract episode detection
-            let episode = '';
-            const episodeLine = lines.find(line => line.includes('Episode:'));
-            if (episodeLine) {
-              episode = episodeLine.replace('Episode:', '').trim();
-            }
-            
-            // Extract processing time
-            let processingTime = '';
-            const timeLine = lines.find(line => line.includes('Total processing time:'));
-            if (timeLine) {
-              processingTime = timeLine.replace('Total processing time:', '').trim();
-            }
-            
-            // Extract paths to verification images
-            let verificationPath = '';
-            const verificationLine = lines.find(line => line.includes('Verification images saved to:'));
-            if (verificationLine) {
-              verificationPath = verificationLine.replace('Verification images saved to:', '').trim();
-            }
-            
-            // Extract best matching still number
-            let bestMatchingStill = '';
-            const bestStillLine = lines.find(line => line.includes('Best matching still:'));
-            if (bestStillLine) {
-              bestMatchingStill = bestStillLine.replace('Best matching still:', '').trim();
-            }
-            
-            const result = {
-              success: true,
-              verified: isVerified,
-              matchScore: bestMatch,
-              episode: episode,
-              processingTime: processingTime,
-              verificationPath: verificationPath,
-              bestStill: bestMatchingStill,
-              usingGPU: stdoutData.includes('Using device: cuda')
-            };
-            
-            console.log(`[CLIP-MATCHER] Processing complete for: ${path.basename(episodePath)}`);
-            console.log(`[CLIP-MATCHER] Match score: ${bestMatch}, Verified: ${isVerified}`);
-            
-            resolve(result);
-          } catch (error) {
-            console.error(`[CLIP-MATCHER] Error parsing results: ${error.message}`);
-            // Log both stdout and stderr on parsing error too
-            console.error(`[CLIP-MATCHER STDOUT on PARSE ERROR]: ${stdoutData}`); 
-            console.error(`[CLIP-MATCHER STDERR on PARSE ERROR]: ${stderrData}`);
-            resolve({ 
-              success: false, 
-              error: `Error parsing results: ${error.message}`
-            });
+        // Attempt to extract error message regardless of exit code
+        let errorMessage = stderrData.trim() || stdoutData.trim(); // Use stdout as fallback
+        
+        // Try to extract verification path one last time if not found yet
+        if (!verificationPath) {
+          const fullOutput = stdoutData + stderrData;
+          const finalPathMatch = fullOutput.match(/Verification images saved to:\s*(.+)/);
+          if (finalPathMatch && finalPathMatch[1]) {
+            verificationPath = finalPathMatch[1].trim();
+            console.log(`[CLIP-MATCHER] Found verification path during final check: ${verificationPath}`);
           }
+        }
+        
+        if (stderrData) {
+            const tracebackMatch = stderrData.match(/Traceback[\s\S]*?(\w+Error:.+?)(\n|$)/s);
+            const simpleErrorMatch = stderrData.match(/(\w+Error:.+?)(\n|$)/s);
+            if (tracebackMatch && tracebackMatch[1]) {
+                errorMessage = tracebackMatch[1].trim();
+            } else if (simpleErrorMatch && simpleErrorMatch[1]) {
+                 errorMessage = simpleErrorMatch[1].trim();
+            }
+            // Remove HuggingFace warning prefix if present
+            errorMessage = errorMessage.replace(/.*FutureWarning:.+?\n/s, '').trim();
+        } else if (!stdoutData && !stderrData) {
+            errorMessage = `Process exited with code ${code} without output.`;
+        }
+
+        // --- Logic based on Exit Code FIRST --- 
+        if (code === 0) { 
+            // Success Case
+            if (jsonOutput && typeof jsonOutput === 'object') {
+                console.log(`[CLIP-MATCHER] Success (Code 0) with JSON output.`);
+                resolve({
+                    success: true,
+                    verified: jsonOutput.verified === true, 
+                    matchScore: typeof jsonOutput.similarity === 'number' ? jsonOutput.similarity : 0,
+                    episode: typeof jsonOutput.episode_info === 'string' ? jsonOutput.episode_info : path.basename(episodePath),
+                    verificationPath: verificationPath || (jsonOutput.verification_path || null)
+                });
+            } else {
+                console.log(`[CLIP-MATCHER] Success (Code 0) but NO JSON output. Making best effort.`);
+                resolve({
+                    success: true,
+                    verified: true, // Assume verified on code 0
+                    matchScore: 0, 
+                    episode: path.basename(episodePath),
+                    verificationPath // Use path detected from stdout/stderr
+                });
+            }
+        } else if (code === 1) {
+            // Verification Failed Case (Non-fatal error)
+            console.log(`[CLIP-MATCHER] Verification Failed (Code 1).`);
+            resolve({
+                success: false,
+                verified: false,
+                verificationPath, // Include detected path
+                error: `Verification failed: ${errorMessage || 'No specific error message.'}`, 
+                exitCode: 1
+            });
         } else {
-          // Log both stdout and stderr when exit code is non-zero
-          console.error(`[CLIP-MATCHER FAILED] Exit Code: ${code}`);
-          console.error(`[CLIP-MATCHER FAILED STDOUT]: ${stdoutData}`);
-          console.error(`[CLIP-MATCHER FAILED STDERR]: ${stderrData}`);
-          resolve({ 
-            success: false, 
-            error: `Process exited with code ${code}: ${stderrData}`
-          });
+            // Other Error Case
+            console.error(`[CLIP-MATCHER] Process error (Code ${code}).`);
+            resolve({
+                success: false,
+                error: `Process exited with code ${code}: ${errorMessage || 'No specific error message.'}`, 
+                exitCode: code,
+                verificationPath // Include detected path
+            });
         }
       });
       
       // Handle process errors
       process.on('error', (err) => {
         console.error(`[CLIP-MATCHER] Failed to start process: ${err.message}`);
-        resolve({ success: false, error: `Failed to start process: ${err.message}` });
+        resolve({ 
+          success: false, 
+          error: `Failed to start process: ${err.message}`,
+          verificationPath: null // No verification path available 
+        });
       });
     });
     
@@ -1296,6 +1308,8 @@ const copyVerificationImage = async (sourcePath, episodeFilePath) => {
   if (!sourcePath) return null;
   
   try {
+    console.log(`[IMAGE] Attempting to copy from source: ${sourcePath}`);
+    
     // Get a unique filename based on the episode file and current timestamp
     const episodeFileName = path.basename(episodeFilePath || 'unknown');
     const timestamp = Date.now();
@@ -1305,29 +1319,48 @@ const copyVerificationImage = async (sourcePath, episodeFilePath) => {
     const destDir = path.join(publicDir, 'matches');
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });
+      console.log(`[IMAGE] Created destination directory: ${destDir}`);
     }
     
     const destPath = path.join(destDir, uniqueFilename);
     
-    // Check if the source file exists
+    // Check if the source file exists with more detailed error logging
     try {
-      await fs.promises.access(sourcePath, fs.constants.R_OK);
+      const sourceStats = await fs.promises.stat(sourcePath);
+      console.log(`[IMAGE] Source file found: ${sourcePath} (Size: ${sourceStats.size} bytes)`);
+      
+      if (sourceStats.size === 0) {
+        console.error(`[ERROR] Source verification image exists but is empty (0 bytes): ${sourcePath}`);
+        return null;
+      }
     } catch (err) {
-      console.error(`[ERROR] Source verification image not found: ${sourcePath}`);
+      console.error(`[ERROR] Source verification image not found or not accessible: ${sourcePath}`);
+      console.error(`[ERROR] File access error details: ${err.message}`);
       return null;
     }
     
     // Copy the file
-    await fs.promises.copyFile(sourcePath, destPath);
-    console.log(`[IMAGE] Copied verification image to: ${destPath}`);
+    try {
+      await fs.promises.copyFile(sourcePath, destPath);
+      console.log(`[IMAGE] Successfully copied verification image to: ${destPath}`);
+      
+      // Verify the destination file was properly created
+      const destStats = await fs.promises.stat(destPath);
+      console.log(`[IMAGE] Verified destination file: ${destPath} (Size: ${destStats.size} bytes)`);
+    } catch (copyErr) {
+      console.error(`[ERROR] Failed to copy verification image from ${sourcePath} to ${destPath}`);
+      console.error(`[ERROR] Copy error details: ${copyErr.message}`);
+      return null;
+    }
     
     // Return the relative path for storing in the database
     // Ensure the path starts with a forward slash
     const relativePath = `/matches/${uniqueFilename}`;
-    console.log(`[IMAGE] Using relative path: ${relativePath}`);
+    console.log(`[IMAGE] Using relative path for database: ${relativePath}`);
     return relativePath;
   } catch (error) {
     console.error(`[ERROR] Failed to copy verification image:`, error);
+    console.error(`[ERROR] Source path: ${sourcePath}, Episode file: ${episodeFilePath}`);
     return null;
   }
 };
@@ -1364,6 +1397,7 @@ app.post('/api/scan', async (req, res) => {
     processScan(libraries).catch(error => {
       console.error('[ERROR] Scan process failed:', error);
       scanStatus.isScanning = false;
+      scanStatus.stopRequested = false; // Reset flag on error too
       scanStatus.errors.push(`Scan process failed: ${error.message}`);
     });
     
@@ -1375,6 +1409,7 @@ app.post('/api/scan', async (req, res) => {
   } catch (error) {
     console.error('[ERROR] Failed to start scan:', error);
     scanStatus.isScanning = false;
+    scanStatus.stopRequested = false; // Reset flag on error too
     res.status(500).json({ error: 'Failed to start scan' });
   }
 });
@@ -1419,145 +1454,171 @@ app.get('/api/scan/status', (req, res) => {
 // Helper function to run the clip-matcher.py script
 async function runClipMatcher(filePath) {
   return new Promise((resolve) => {
-    console.log(`[CLIP-MATCHER] Running clip-matcher.py on: ${filePath}`);
+    console.log(`[CLIP-MATCHER] Processing file: ${filePath}`);
     
-    // Build the path to the script
-    const clipMatcherPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
+    // Prepare the command that runs the Python script
+    const scriptPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
     
-    // Build command to run the Python script
+    // Make sure scriptPath is valid
+    if (!fs.existsSync(scriptPath)) {
+      console.error(`[ERROR] Script not found: ${scriptPath}`);
+      resolve({ 
+        success: false, 
+        error: `Script not found: ${scriptPath}` 
+      });
+      return;
+    }
+    
+    // Array of arguments to pass to the script
     const scriptArgs = [
-        clipMatcherPath,
-        filePath,
-        '--threshold', String(clipMatcherThreshold),
-        '--max-stills', '5',
-        '--early-stop', String(clipMatcherEarlyStop)
+      scriptPath,  // Path to the script (first argument must be the script path)
+      filePath,    // Path to the video file
+      '--threshold', '0.93'  // Similarity threshold
     ];
     
-    const process = spawn('python3', scriptArgs);
+    console.log(`[CLIP-MATCHER] Command: python3 ${scriptArgs.join(' ')}`);
     
+    // Initialize variables to track data from the process
     let stdoutData = '';
     let stderrData = '';
+    let jsonOutput = null;
+    let verificationPath = null; // Initialize verificationPath
     
-    // Capture stdout data
+    // Spawn Python process
+    const process = spawn('python3', scriptArgs);
+    
+    // Collect stdout data
     process.stdout.on('data', (data) => {
-      const dataStr = data.toString();
-      stdoutData += dataStr;
+      const chunk = data.toString();
+      stdoutData += chunk;
       
-      // Look for key output lines to log immediately
-      if (dataStr.includes('Best match:')) {
-        console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
+      // Try to extract the verification path from the output
+      const verifyPathMatch = chunk.match(/Verification images saved to:\s*(.+)/);
+      if (verifyPathMatch && verifyPathMatch[1]) {
+        verificationPath = verifyPathMatch[1].trim();
+        console.log(`[CLIP-MATCHER] Detected verification path from stdout: ${verificationPath}`);
       }
-      if (dataStr.includes('Verification images saved to:')) {
-        console.log(`[CLIP-MATCHER] ${dataStr.trim()}`);
-      }
-    });
-    
-    // Capture stderr data
-    process.stderr.on('data', (data) => {
-      const dataStr = data.toString();
-      stderrData += dataStr;
-      console.error(`[CLIP-MATCHER ERROR] ${dataStr.trim()}`);
-    });
-    
-    // Handle process completion
-    process.on('close', (code) => {
-      console.log(`[CLIP-MATCHER] Process exited with code ${code}`);
       
-      if (code === 0) {
-        try {
-          // Extract only the important information from the output
-          const lines = stdoutData.split('\n');
-          
-          // Extract match status
-          const isVerified = stdoutData.includes('✓ VERIFIED');
-          
-          // Extract best match score
-          let bestMatch = 0;
-          const matchScoreLine = lines.find(line => line.includes('Best match:'));
-          if (matchScoreLine) {
-            const match = matchScoreLine.match(/Best match: ([\d.]+)/);
-            if (match) bestMatch = parseFloat(match[1]);
-          }
-          
-          // Extract episode detection
-          let episode = '';
-          const episodeLine = lines.find(line => line.includes('Episode:'));
-          if (episodeLine) {
-            episode = episodeLine.replace('Episode:', '').trim();
-          }
-          
-          // Extract processing time
-          let processingTime = '';
-          const timeLine = lines.find(line => line.includes('Total processing time:'));
-          if (timeLine) {
-            processingTime = timeLine.replace('Total processing time:', '').trim();
-          }
-          
-          // Extract paths to verification images
-          let verificationPath = '';
-          const verificationLine = lines.find(line => line.includes('Verification images saved to:'));
-          if (verificationLine) {
-            verificationPath = verificationLine.replace('Verification images saved to:', '').trim();
-            console.log(`[CLIP-MATCHER] Verification images saved at: ${verificationPath}`);
-            
-            // Verify the best_match.jpg file exists
-            const bestMatchPath = path.join(verificationPath, 'best_match.jpg');
+      // Look for JSON output
+      try {
+        // Check if we have any JSON in the output
+        const jsonMatches = chunk.match(/({[\s\S]*})/g);
+        if (jsonMatches) {
+          for (const jsonStr of jsonMatches) {
             try {
-              fs.accessSync(bestMatchPath, fs.constants.R_OK);
-              console.log(`[CLIP-MATCHER] Found best match image at: ${bestMatchPath}`);
-            } catch (err) {
-              console.error(`[CLIP-MATCHER] Best match image not found: ${bestMatchPath}`);
+              const parsedJson = JSON.parse(jsonStr);
+              if (parsedJson && typeof parsedJson === 'object') {
+                jsonOutput = parsedJson;
+                console.log(`[CLIP-MATCHER] Parsed JSON result:`, jsonOutput);
+              }
+            } catch (parseErr) {
+              // Not valid JSON, continue
             }
           }
-          
-          // Extract best matching still number
-          let bestMatchingStill = '';
-          const bestStillLine = lines.find(line => line.includes('Best matching still:'));
-          if (bestStillLine) {
-            bestMatchingStill = bestStillLine.replace('Best matching still:', '').trim();
-          }
-          
-          const result = {
-            success: true,
-            verified: isVerified,
-            matchScore: bestMatch,
-            episode: episode,
-            processingTime: processingTime,
-            verificationPath: verificationPath,
-            bestStill: bestMatchingStill,
-            usingGPU: stdoutData.includes('Using device: cuda')
-          };
-          
-          console.log(`[CLIP-MATCHER] Processing complete for: ${path.basename(filePath)}`);
-          console.log(`[CLIP-MATCHER] Match score: ${bestMatch}, Verified: ${isVerified}`);
-          
-          resolve(result);
-        } catch (error) {
-          console.error(`[CLIP-MATCHER] Error parsing results: ${error.message}`);
-          // Log both stdout and stderr on parsing error too
-          console.error(`[CLIP-MATCHER STDOUT on PARSE ERROR]: ${stdoutData}`); 
-          console.error(`[CLIP-MATCHER STDERR on PARSE ERROR]: ${stderrData}`);
-          resolve({ 
-            success: false, 
-            error: `Error parsing results: ${error.message}`
-          });
         }
+      } catch (err) {
+        console.error(`[ERROR] Error parsing stdout: ${err.message}`);
+      }
+    });
+    
+    // Collect stderr data
+    process.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderrData += chunk;
+      console.error(`[CLIP-MATCHER][ERROR] ${chunk.trim()}`);
+      
+      // Try to extract verification path from error output too
+      const verifyPathMatch = chunk.match(/Verification images saved to:\s*(.+)/);
+      if (verifyPathMatch && verifyPathMatch[1]) {
+        verificationPath = verifyPathMatch[1].trim();
+        console.log(`[CLIP-MATCHER] Detected verification path from stderr: ${verificationPath}`);
+      }
+    });
+    
+    // Handle process exit
+    process.on('close', (code) => {
+      console.log(`[CLIP-MATCHER] Process exited with code ${code} for file: ${filePath}`);
+      console.log(`[CLIP-MATCHER] verificationPath at close: ${verificationPath || 'null'}`);
+      
+      // Attempt to extract error message regardless of exit code
+      let errorMessage = stderrData.trim() || stdoutData.trim(); // Use stdout as fallback
+      
+      // Try to extract verification path one last time if not found yet
+      if (!verificationPath) {
+        const fullOutput = stdoutData + stderrData;
+        const finalPathMatch = fullOutput.match(/Verification images saved to:\s*(.+)/);
+        if (finalPathMatch && finalPathMatch[1]) {
+          verificationPath = finalPathMatch[1].trim();
+          console.log(`[CLIP-MATCHER] Found verification path during final check: ${verificationPath}`);
+        }
+      }
+      
+      if (stderrData) {
+          const tracebackMatch = stderrData.match(/Traceback[\s\S]*?(\w+Error:.+?)(\n|$)/s);
+          const simpleErrorMatch = stderrData.match(/(\w+Error:.+?)(\n|$)/s);
+          if (tracebackMatch && tracebackMatch[1]) {
+              errorMessage = tracebackMatch[1].trim();
+          } else if (simpleErrorMatch && simpleErrorMatch[1]) {
+               errorMessage = simpleErrorMatch[1].trim();
+          }
+          // Remove HuggingFace warning prefix if present
+          errorMessage = errorMessage.replace(/.*FutureWarning:.+?\n/s, '').trim();
+      } else if (!stdoutData && !stderrData) {
+          errorMessage = `Process exited with code ${code} without output.`;
+      }
+
+      // --- Logic based on Exit Code FIRST --- 
+      if (code === 0) { 
+          // Success Case
+          if (jsonOutput && typeof jsonOutput === 'object') {
+              console.log(`[CLIP-MATCHER] Success (Code 0) with JSON output.`);
+              resolve({
+                  success: true,
+                  verified: jsonOutput.verified === true, 
+                  matchScore: typeof jsonOutput.similarity === 'number' ? jsonOutput.similarity : 0,
+                  episode: typeof jsonOutput.episode_info === 'string' ? jsonOutput.episode_info : path.basename(filePath),
+                  verificationPath: verificationPath || (jsonOutput.verification_path || null)
+              });
+          } else {
+              console.log(`[CLIP-MATCHER] Success (Code 0) but NO JSON output. Making best effort.`);
+              resolve({
+                  success: true,
+                  verified: true, // Assume verified on code 0
+                  matchScore: 0, 
+                  episode: path.basename(filePath),
+                  verificationPath // Use path detected from stdout/stderr
+              });
+          }
+      } else if (code === 1) {
+          // Verification Failed Case (Non-fatal error)
+          console.log(`[CLIP-MATCHER] Verification Failed (Code 1).`);
+          resolve({
+              success: false,
+              verified: false,
+              verificationPath, // Include detected path
+              error: `Verification failed: ${errorMessage || 'No specific error message.'}`, 
+              exitCode: 1
+          });
       } else {
-        // Log both stdout and stderr when exit code is non-zero
-        console.error(`[CLIP-MATCHER FAILED] Exit Code: ${code}`);
-        console.error(`[CLIP-MATCHER FAILED STDOUT]: ${stdoutData}`);
-        console.error(`[CLIP-MATCHER FAILED STDERR]: ${stderrData}`);
-        resolve({ 
-          success: false, 
-          error: `Process exited with code ${code}: ${stderrData}`
-        });
+          // Other Error Case
+          console.error(`[CLIP-MATCHER] Process error (Code ${code}).`);
+          resolve({
+              success: false,
+              error: `Process exited with code ${code}: ${errorMessage || 'No specific error message.'}`, 
+              exitCode: code,
+              verificationPath // Include detected path
+          });
       }
     });
     
     // Handle process errors
     process.on('error', (err) => {
       console.error(`[CLIP-MATCHER] Failed to start process: ${err.message}`);
-      resolve({ success: false, error: `Failed to start process: ${err.message}` });
+      resolve({ 
+        success: false, 
+        error: `Failed to start process: ${err.message}`,
+        verificationPath: null // No verification path available 
+      });
     });
   });
 }
@@ -1713,52 +1774,76 @@ async function processScan(libraries) {
             }
           } else {
             // Handle clip matcher failure
-            console.error(`[ERROR] Clip matcher failed for ${file.path}: ${matchResult.error}`);
-            
+            console.log(`[SCANNER_ERROR] Clip matcher process failed for: ${file.path}`);
+            console.log(`[SCANNER_ERROR] Full matchResult:`, JSON.stringify(matchResult, null, 2)); // Log the entire result
+
             const now = Math.floor(Date.now());
             let publicImagePath = null; // Default to null
             let errorEpisodeInfo = "Processing Error"; // Default error message
-
-            // Try to extract exit code if available in the error message
+            
             const exitCodeMatch = matchResult.error?.match(/Process exited with code (\d+)/);
             const exitCode = exitCodeMatch ? parseInt(exitCodeMatch[1], 10) : null;
+            console.log(`[SCANNER_ERROR] Detected Exit Code: ${exitCode}`);
 
-            // If it was just a verification failure (exit code 1) AND a verification path exists
-            if (exitCode === 1 && matchResult.verificationPath) {
-                console.log(`[SCAN] Verification failed (exit code 1) for ${file.path}, but attempting to copy best_match image.`);
-                errorEpisodeInfo = "Verification Failed"; // More specific status
-                // Attempt to copy the best_match.jpg from the verification path
+            // Even on failure, try to get the verification image if the path was created
+            if (matchResult.verificationPath) {
+                console.log(`[SCANNER_ERROR] Verification path found: ${matchResult.verificationPath}. Attempting image copy.`);
                 const bestMatchSourcePath = path.join(matchResult.verificationPath, 'best_match.jpg');
+                console.log(`[SCANNER_ERROR] Source path for copy: ${bestMatchSourcePath}`);
+                
                 publicImagePath = await copyVerificationImage(bestMatchSourcePath, file.path); 
+                
+                if (publicImagePath) {
+                    console.log(`[SCANNER_ERROR] Successfully copied error image to: ${publicImagePath}`);
+                } else {
+                    console.log(`[SCANNER_ERROR] Failed to copy error image from ${bestMatchSourcePath}.`);
+                }
+            } else {
+                 console.log(`[SCANNER_ERROR] No verification path found in matchResult. Cannot copy image.`);
+            }
+
+            // Determine the error message based on the exit code or error content
+            if (exitCode === 1) {
+                errorEpisodeInfo = "Verification Failed"; // More specific status for exit code 1
             } else if (exitCode) {
                 // Specific crash code detected
                 errorEpisodeInfo = `Processing Error (Code: ${exitCode})`;
             } else if (matchResult.error?.includes('Error parsing results')) {
                 // Handle cases where Node.js failed to parse python script output
                 errorEpisodeInfo = "Error Parsing Script Output";
-            } // Otherwise, stick with default "Processing Error" and null image path
+            } else if (matchResult.error?.includes('FutureWarning:')) {
+                // Handle HuggingFace warnings more specifically
+                errorEpisodeInfo = "HuggingFace Download Warning";
+                const realErrorMatch = matchResult.error.match(/FutureWarning:.+?\\n(.+)/s);
+                if (realErrorMatch && realErrorMatch[1]) {
+                    // Try to append the actual error if found after the warning
+                    errorEpisodeInfo = `Warning + Error: ${realErrorMatch[1].trim().substring(0, 50)}`; 
+                }
+            } // Otherwise, stick with default "Processing Error"
+            console.log(`[SCANNER_ERROR] Determined error info: ${errorEpisodeInfo}`);
             
-            // Use existing verification image if we couldn't get a new one on error
+            // Use existing verification image if we couldn't get a new one on error AND one wasn't copied above
             if (!publicImagePath && existingRecord?.verification_image_path) {
                 publicImagePath = existingRecord.verification_image_path;
-                console.log(`[SCAN] Reusing existing image for ${file.path} after error.`);
+                console.log(`[SCANNER_ERROR] Reusing existing image for ${file.path} after error.`);
             }
+            console.log(`[SCANNER_ERROR] Final publicImagePath to be saved: ${publicImagePath}`);
 
             const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
             const sanitizedFilePath = sanitizeForSQLite(file.path);
             const sanitizedModifiedTime = sanitizeForSQLite(modifiedTime);
             const sanitizedScanTime = sanitizeForSQLite(now);
-            const sanitizedImagePath = sanitizeForSQLite(publicImagePath);
+            const sanitizedImagePath = sanitizeForSQLite(publicImagePath); // Use the potentially copied image path
             const sanitizedErrorMessage = sanitizeForSQLite(errorEpisodeInfo);
 
             if (existingRecord) {
               console.log(`[DB] Updating record with error for ${file.path}`);
               updateScannedFile.run(
                 sanitizedScanTime,
-                sanitizedImagePath,
+                sanitizedImagePath, // Store path to error image if copied
                 0, // Match score
                 0, // Verified status
-                sanitizedErrorMessage, // Episode info
+                sanitizedErrorMessage, // Episode info (Error message)
                 sanitizedModifiedTime,
                 sanitizedFilePath
               );
@@ -1769,10 +1854,10 @@ async function processScan(libraries) {
                 sanitizedFilePath,
                 sanitizedModifiedTime,
                 sanitizedScanTime,
-                sanitizedImagePath,
+                sanitizedImagePath, // Store path to error image if copied
                 0, // Match score
                 0, // Verified status
-                sanitizedErrorMessage // Episode info
+                sanitizedErrorMessage // Episode info (Error message)
               );
             }
             scanStatus.errors.push(`Failed to process ${file.path}: ${matchResult.error}`);

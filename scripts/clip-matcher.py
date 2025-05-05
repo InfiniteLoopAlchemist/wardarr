@@ -8,6 +8,7 @@ import subprocess
 import requests
 import shutil
 import traceback
+import warnings
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from pathlib import Path
@@ -16,6 +17,9 @@ import torch
 from transformers import CLIPProcessor, CLIPModel
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
+
+# Filter out the specific HuggingFace warning about resume_download
+warnings.filterwarnings("ignore", message=".*resume_download.*", category=FutureWarning)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -373,10 +377,18 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
         print("Loading CLIP model...")
         # Define the model name to use
         MODEL_NAME = "openai/clip-vit-large-patch14" # Changed from base-patch16
-        model = CLIPModel.from_pretrained(MODEL_NAME).to(device)
-        processor = CLIPProcessor.from_pretrained(MODEL_NAME, use_fast=False)
-        print(f"Using {MODEL_NAME} with standard image processor (not fast)")
-        
+        try:
+            model = CLIPModel.from_pretrained(MODEL_NAME, force_download=False).to(device)
+            processor = CLIPProcessor.from_pretrained(MODEL_NAME, force_download=False, use_fast=False)
+            print(f"Using {MODEL_NAME} with standard image processor (not fast)")
+        except Exception as e:
+            print(f"Error loading model: {str(e)}")
+            print("Trying alternate loading approach...")
+            # Fallback approach if the first attempt fails
+            model = CLIPModel.from_pretrained(MODEL_NAME, local_files_only=False).to(device)
+            processor = CLIPProcessor.from_pretrained(MODEL_NAME, local_files_only=False, use_fast=False)
+            print(f"Fallback successful: loaded {MODEL_NAME}")
+            
         # Process the specified number of stills
         max_similarity = 0.0
         best_match_frame = None
