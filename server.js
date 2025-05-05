@@ -13,21 +13,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Initialize SQLite database
-const db = new Database('libraries.db', { verbose: console.log });
+const db = new Database('libraries.db');
 
-// Update the clip-matcher.py default threshold
-const clipMatcherThreshold = 0.93;
+// Define constants for CLIP matching (or read from config/env later)
+const clipMatcherThreshold = 0.93; // Threshold used when calling the script
 const clipMatcherEarlyStop = 0.96;
-const clipMatcherDefaultPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
-try {
-    let clipMatcherContent = fs.readFileSync(clipMatcherDefaultPath, 'utf8');
-    clipMatcherContent = clipMatcherContent.replace(/SIMILARITY_THRESHOLD = 0\.\d+/, `SIMILARITY_THRESHOLD = ${clipMatcherThreshold}`);
-    clipMatcherContent = clipMatcherContent.replace(/EARLY_STOP_THRESHOLD = 0\.\d+/, `EARLY_STOP_THRESHOLD = ${clipMatcherEarlyStop}`);
-    fs.writeFileSync(clipMatcherDefaultPath, clipMatcherContent);
-    console.log(`[SERVER] Updated clip-matcher.py default threshold to ${clipMatcherThreshold} and early stop to ${clipMatcherEarlyStop}`);
-} catch (err) {
-    console.error('[ERROR] Failed to update clip-matcher.py defaults:', err);
-}
 
 // Create libraries table if it doesn't exist
 db.exec(`
@@ -108,7 +98,7 @@ const logRequest = (req, res, next) => {
 // Log all server events
 console.log(`[SERVER] Starting server setup at ${new Date().toISOString()}`);
 
-app.use(logRequest);
+// app.use(logRequest); // Commented out to reduce verbosity
 
 // Configure CORS with detailed logging
 app.use(cors({
@@ -968,17 +958,18 @@ app.post('/api/match', async (req, res) => {
     
     // Setup parameters for clip-matcher.py
     const clipMatcherPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
+    const scriptArgs = [
+        clipMatcherPath,
+        episodePath,
+        '--threshold', String(clipMatcherThreshold),
+        '--max-stills', '5',
+        '--early-stop', String(clipMatcherEarlyStop)
+    ];
     
     // Create a promise to handle the async process
     const matchPromise = new Promise((resolve) => {
       // Build command to run the Python script
-      const process = spawn('python3', [
-        clipMatcherPath,
-        episodePath,
-        '--max-stills', '5',
-        '--threshold', '0.93',
-        '--early-stop', '0.96'
-      ]);
+      const process = spawn('python3', scriptArgs);
       
       let stdoutData = '';
       let stderrData = '';
@@ -1101,17 +1092,17 @@ console.log('[ROUTE] Registered route: POST /api/match');
 
 // GET /api/history - Get scan history
 app.get('/api/history', (req, res) => {
-  console.log('[ROUTE] GET /api/history');
+  // console.log('[ROUTE] GET /api/history'); // Commented out
   try {
     const history = getScannedFiles.all();
-    console.log(`[ROUTE] Returning ${history.length} scanned files`);
+    // console.log(`[ROUTE] Returning ${history.length} scanned files`); // Commented out
     res.json(history);
   } catch (error) {
     console.error('[ERROR] Failed to get scan history:', error);
     res.status(500).json({ error: 'Failed to get scan history from database' });
   }
 });
-console.log('[ROUTE] Registered route: GET /api/history');
+// console.log('[ROUTE] Registered route: GET /api/history'); // Commented out registration log
 
 // DELETE /api/history - Clear all scan history
 app.delete('/api/history', (req, res) => {
@@ -1211,8 +1202,8 @@ console.log('[ROUTE] Registered route: GET /api/latest-verification');
 
 // GET /api/latest-match - Get latest match image in real-time
 app.get('/api/latest-match', (req, res) => {
-  console.log('[ROUTE] GET /api/latest-match (real-time polling)');
-  
+  // console.log('[ROUTE] GET /api/latest-match (real-time polling)'); // Commented out to reduce noise
+
   // Set cache-busting headers
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -1235,7 +1226,7 @@ app.get('/api/latest-match', (req, res) => {
       }
     }
     
-    console.log(`[ROUTE] Returning latest match from database: ${latestFile.file_path}`);
+    // console.log(`[ROUTE] Returning latest match from database: ${latestFile.file_path}`); // Commented out to reduce noise
     return res.json({
       found: true,
       file_path: latestFile.file_path,
@@ -1434,13 +1425,15 @@ async function runClipMatcher(filePath) {
     const clipMatcherPath = path.join(__dirname, 'scripts', 'clip-matcher.py');
     
     // Build command to run the Python script
-    const process = spawn('python3', [
-      clipMatcherPath,
-      filePath,
-      '--max-stills', '5',
-      '--threshold', '0.93',
-      '--early-stop', '0.96'
-    ]);
+    const scriptArgs = [
+        clipMatcherPath,
+        filePath,
+        '--threshold', String(clipMatcherThreshold),
+        '--max-stills', '5',
+        '--early-stop', String(clipMatcherEarlyStop)
+    ];
+    
+    const process = spawn('python3', scriptArgs);
     
     let stdoutData = '';
     let stderrData = '';
