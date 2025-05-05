@@ -371,9 +371,11 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
         
         # Initialize CLIP model
         print("Loading CLIP model...")
-        model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-        processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", use_fast=True)
-        print("Using fast image processor")
+        # Define the model name to use
+        MODEL_NAME = "openai/clip-vit-large-patch14" # Changed from base-patch16
+        model = CLIPModel.from_pretrained(MODEL_NAME).to(device)
+        processor = CLIPProcessor.from_pretrained(MODEL_NAME, use_fast=False)
+        print(f"Using {MODEL_NAME} with standard image processor (not fast)")
         
         # Process the specified number of stills
         max_similarity = 0.0

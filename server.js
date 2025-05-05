@@ -410,7 +410,7 @@ const viewerHtml = `
         }
         
         function fetchLatestVerification() {
-            fetch('/api/latest-match?t=' + Date.now())
+            fetch('/api/latest-verification')
                 .then(response => response.json())
                 .then(data => {
                     displayVerificationImage(data);
@@ -421,7 +421,7 @@ const viewerHtml = `
         }
         
         function fetchScanStatus() {
-            fetch('/api/scan/status?t=' + Date.now())
+            fetch('/api/scan/status')
                 .then(response => response.json())
                 .then(data => {
                     updateScanStatus(data);
@@ -1218,32 +1218,7 @@ app.get('/api/latest-match', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   
-  // First check if we have a latest match in the scan status
-  if (scanStatus.latestMatch) {
-    console.log('[ROUTE] Returning real-time latest match from scan status');
-    
-    // Always update the timestamp to force browser refresh
-    scanStatus.latestMatch.timestamp = Date.now();
-    
-    // Ensure image path is properly formatted
-    let imagePath = scanStatus.latestMatch.imagePath;
-    if (imagePath && !imagePath.startsWith('/')) {
-      imagePath = '/' + imagePath;
-    }
-    
-    return res.json({
-      found: true,
-      file_path: scanStatus.latestMatch.path,
-      verification_image_path: imagePath,
-      match_score: scanStatus.latestMatch.matchScore,
-      is_verified: scanStatus.latestMatch.isVerified === true || scanStatus.latestMatch.isVerified === 1,
-      episode_info: scanStatus.latestMatch.episodeInfo,
-      timestamp: Date.now(),
-      source: 'scan_status'
-    });
-  }
-  
-  // If not in scan status, get from database
+  // Always get the latest record from the database for this endpoint
   try {
     const latestFile = getLatestScannedFile.get();
     
@@ -1748,8 +1723,33 @@ async function processScan(libraries) {
             console.error(`[ERROR] Clip matcher failed for ${file.path}: ${matchResult.error}`);
             
             const now = Math.floor(Date.now());
-            let publicImagePath = existingRecord?.verification_image_path || null; // Keep old image on error
-            const errorEpisodeInfo = "Processing Error"; // Use generic error message
+            let publicImagePath = null; // Default to null
+            let errorEpisodeInfo = "Processing Error"; // Default error message
+
+            // Try to extract exit code if available in the error message
+            const exitCodeMatch = matchResult.error?.match(/Process exited with code (\d+)/);
+            const exitCode = exitCodeMatch ? parseInt(exitCodeMatch[1], 10) : null;
+
+            // If it was just a verification failure (exit code 1) AND a verification path exists
+            if (exitCode === 1 && matchResult.verificationPath) {
+                console.log(`[SCAN] Verification failed (exit code 1) for ${file.path}, but attempting to copy best_match image.`);
+                errorEpisodeInfo = "Verification Failed"; // More specific status
+                // Attempt to copy the best_match.jpg from the verification path
+                const bestMatchSourcePath = path.join(matchResult.verificationPath, 'best_match.jpg');
+                publicImagePath = await copyVerificationImage(bestMatchSourcePath, file.path); 
+            } else if (exitCode) {
+                // Specific crash code detected
+                errorEpisodeInfo = `Processing Error (Code: ${exitCode})`;
+            } else if (matchResult.error?.includes('Error parsing results')) {
+                // Handle cases where Node.js failed to parse python script output
+                errorEpisodeInfo = "Error Parsing Script Output";
+            } // Otherwise, stick with default "Processing Error" and null image path
+            
+            // Use existing verification image if we couldn't get a new one on error
+            if (!publicImagePath && existingRecord?.verification_image_path) {
+                publicImagePath = existingRecord.verification_image_path;
+                console.log(`[SCAN] Reusing existing image for ${file.path} after error.`);
+            }
 
             const sanitizedLibraryId = sanitizeForSQLite(file.libraryId);
             const sanitizedFilePath = sanitizeForSQLite(file.path);

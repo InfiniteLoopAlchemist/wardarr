@@ -241,7 +241,7 @@
         }
         
         function fetchLatestVerification() {
-            fetch('/api/latest-match?t=' + Date.now())
+            fetch('/api/latest-verification')
                 .then(response => response.json())
                 .then(data => {
                     displayVerificationImage(data);
@@ -252,7 +252,7 @@
         }
         
         function fetchScanStatus() {
-            fetch('/api/scan/status?t=' + Date.now())
+            fetch('/api/scan/status')
                 .then(response => response.json())
                 .then(data => {
                     updateScanStatus(data);
