@@ -15,13 +15,21 @@ import re
 import torch
 from transformers import CLIPProcessor, CLIPModel
 from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Check for GPU availability
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
 print(f"Using device: {device}")
 
-# TMDB API key
-TMDB_API_KEY = '44027419f85a28c4be535275eba62ca7'
+# TMDB API key - Read from environment variable
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+if not TMDB_API_KEY:
+    print("ERROR: TMDB_API_KEY not found in environment variables or .env file.")
+    sys.exit(1) # Exit if key is missing
+
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
