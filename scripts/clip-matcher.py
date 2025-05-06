@@ -38,7 +38,7 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
 # Similarity threshold (0.96 default is stricter)
-SIMILARITY_THRESHOLD = 0.93
+SIMILARITY_THRESHOLD = 0.90
 
 # Early stopping threshold (stop processing more stills if a match exceeds this)
 EARLY_STOP_THRESHOLD = 0.96
