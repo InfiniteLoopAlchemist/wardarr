@@ -1049,11 +1049,17 @@ app.post('/api/match', async (req, res) => {
                     verificationPath: verificationPath || (jsonOutput.verification_path || null)
                 });
             } else {
-                console.log(`[CLIP-MATCHER] Success (Code 0) but NO JSON output. Making best effort.`);
+                console.log(`[CLIP-MATCHER] Success (Code 0) but NO JSON output. Parsing stdout for score...`);
+                let fallbackScore = 0;
+                const scoreMatch = stdoutData.match(/Best match:\s*([\d.]+)/);
+                if (scoreMatch && scoreMatch[1]) {
+                    fallbackScore = parseFloat(scoreMatch[1]);
+                    console.log(`[CLIP-MATCHER] Found fallback score in stdout: ${fallbackScore}`);
+                }
                 resolve({
                     success: true,
                     verified: true, // Assume verified on code 0
-                    matchScore: 0, 
+                    matchScore: fallbackScore, // Use parsed score or 0 
                     episode: path.basename(episodePath),
                     verificationPath // Use path detected from stdout/stderr
                 });
@@ -1580,11 +1586,17 @@ async function runClipMatcher(filePath) {
                   verificationPath: verificationPath || (jsonOutput.verification_path || null)
               });
           } else {
-              console.log(`[CLIP-MATCHER] Success (Code 0) but NO JSON output. Making best effort.`);
+              console.log(`[CLIP-MATCHER] Success (Code 0) but NO JSON output. Parsing stdout for score...`);
+              let fallbackScore = 0;
+              const scoreMatch = stdoutData.match(/Best match:\s*([\d.]+)/);
+              if (scoreMatch && scoreMatch[1]) {
+                  fallbackScore = parseFloat(scoreMatch[1]);
+                  console.log(`[CLIP-MATCHER] Found fallback score in stdout: ${fallbackScore}`);
+              }
               resolve({
                   success: true,
                   verified: true, // Assume verified on code 0
-                  matchScore: 0, 
+                  matchScore: fallbackScore, // Use parsed score or 0 
                   episode: path.basename(filePath),
                   verificationPath // Use path detected from stdout/stderr
               });
@@ -1860,12 +1872,10 @@ async function processScan(libraries) {
                 sanitizedErrorMessage // Episode info (Error message)
               );
             }
-            scanStatus.errors.push(`Failed to process ${file.path}: ${matchResult.error}`);
           }
         } // End if(shouldScan)
       } catch (error) {
         console.error(`[ERROR] Failed to process file ${file.path}:`, error);
-        scanStatus.errors.push(`Failed to process ${file.path}: ${error.message}`);
       }
     }
     
@@ -1880,7 +1890,7 @@ async function processScan(libraries) {
       scanStatus.latestMatch = latestSuccessfulMatch;
     }
     
-    console.log(`[SCAN] Scan completed. Processed ${allFiles.length} files with ${scanStatus.errors.length} errors.`);
+    console.log(`[SCAN] Scan completed. Processed ${allFiles.length} files.`); // Removed error count from log
     if (latestSuccessfulMatch) {
       console.log(`[SCAN] Latest successful match: ${latestSuccessfulMatch.path}`);
     }
@@ -1888,7 +1898,6 @@ async function processScan(libraries) {
     console.error('[ERROR] Scan process failed:', error);
     scanStatus.isScanning = false;
     scanStatus.stopRequested = false; // Reset flag on error too
-    scanStatus.errors.push(`Scan process failed: ${error.message}`);
   }
 }
 

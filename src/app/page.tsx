@@ -359,38 +359,26 @@ export default function Dashboard() {
           </div>
         </div>
         
-        {/* Progress Bar */}
-        {scanStatus.isScanning && (
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-1">
-              <span>Progress: {progressPercentage}%</span>
-              <span>{scanStatus.processedFiles} / {scanStatus.totalFiles} files</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-4">
-              <div 
-                className="bg-blue-600 h-4 rounded-full transition-all duration-300 ease-in-out"
-                style={{ width: `${progressPercentage}%` }}
-              ></div>
-            </div>
-            {scanStatus.currentFile && (
-              <div className="mt-2 text-sm text-gray-400 truncate">
-                Current file: {scanStatus.currentFile}
-              </div>
-            )}
+        {/* Progress Bar and Status */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-gray-400">
+              {scanStatus.isScanning ? `Scanning... ${progressPercentage}%` : 'Scan Idle'}
+            </span>
+            <span className="text-sm text-gray-500">
+              {scanStatus.processedFiles} / {scanStatus.totalFiles} files
+            </span>
           </div>
-        )}
-        
-        {/* Scan Errors */}
-        {scanStatus.errors.length > 0 && (
-          <div className="mt-4">
-            <h3 className="text-red-500 font-medium mb-2">Errors ({scanStatus.errors.length})</h3>
-            <div className="bg-gray-900 p-3 rounded max-h-40 overflow-y-auto text-sm">
-              {scanStatus.errors.map((error, index) => (
-                <div key={index} className="text-red-400 mb-1">{error}</div>
-              ))}
-            </div>
+          <div className="w-full bg-gray-700 rounded-full h-2.5">
+            <div 
+              className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
+              style={{ width: `${progressPercentage}%` }}
+            ></div>
           </div>
-        )}
+          {scanStatus.isScanning && scanStatus.currentFile && (
+            <div className="text-xs text-gray-400 mt-1 truncate">Current file: {scanStatus.currentFile}</div>
+          )}
+        </div>
       </div>
       
       {/* Latest Verification */}
