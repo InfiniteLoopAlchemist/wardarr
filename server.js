@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const db = new Database('libraries.db');
 
 // Define constants for CLIP matching (or read from config/env later)
-const clipMatcherThreshold = 0.93; // Threshold used when calling the script
+const clipMatcherThreshold = 0.90; // Threshold used when calling the script
 const clipMatcherEarlyStop = 0.96;
 
 // Create libraries table if it doesn't exist
@@ -1479,7 +1479,7 @@ async function runClipMatcher(filePath) {
     const scriptArgs = [
       scriptPath,  // Path to the script (first argument must be the script path)
       filePath,    // Path to the video file
-      '--threshold', '0.93'  // Similarity threshold
+      '--threshold', '0.90'  // Similarity threshold
     ];
     
     console.log(`[CLIP-MATCHER] Command: python3 ${scriptArgs.join(' ')}`);
