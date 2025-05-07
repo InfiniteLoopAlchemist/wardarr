@@ -4,17 +4,16 @@ Wardarr is a web application for managing TV show libraries and verifying episod
 
 ## Project Status (Alpha)
 
-**This is a work in progress and currently in an alpha state.**
+**This is a work in progress and currently in an alpha state. Use at your own risk. Other developers are welcome. I'll eventually get around to making a CONTRIBUTING.md file.**
 
-*   **Started:** May 2024 (Just a few days ago!)
-*   **Motivation:** This is a personal "vibe code" project.
-*   **Experience:** Built by a developer with 6 years of programming experience (previous projects include a weather/electricity monitoring app built around the GPT-4 launch).
+*   **Started:** May 2025 (Just a few days ago!)
+*   **Motivation:** This is my first "vibe code" project.
 *   **Known Issues:** Expect rough edges and incomplete features.
-*   **Future Plans:** Finish this README, potentially release a Docker Compose setup for easier deployment.
+*   **Future Plans:** Finish this README, release a Docker Compose setup for easier deployment and use. Also, make a pHash of the verified content so you don't have to process the whole CLIP model again. Additionally, make it work with Radarr and Sonarr so you can quickly blacklist wrong content and run the check again. I might make a DB of pHashes for quicker verification and more.
 
 ## Requirements
 
-*   **Node.js:** 16.x or higher
+*   **Node.js:** 20.x or higher
 *   **npm or yarn**
 *   **Python 3:** For the verification script (`scripts/clip-matcher.py`)
 *   **Python Dependencies:** See `requirements.txt` (install via `pip install -r requirements.txt`)
@@ -25,7 +24,7 @@ Wardarr is a web application for managing TV show libraries and verifying episod
     ```
 *   **GPU (Recommended):** While the verification script can run on a CPU, processing will be **significantly faster** with a dedicated GPU. 
     *   **NVIDIA GPUs (CUDA):** Generally provide the best performance.
-    *   **Apple Silicon (MPS):** May work (was tested previously on M1), but primary development is now Linux/NVIDIA, so MPS support might vary.
+    *   **Apple Silicon (MPS):** May work (was tested previously on my M1), but primary development is now Linux/NVIDIA, so MPS support might vary.
 
 ## Features
 
