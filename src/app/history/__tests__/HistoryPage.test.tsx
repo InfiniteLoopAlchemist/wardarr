@@ -43,10 +43,8 @@ describe('History Page Image Display', () => {
       return { ok: true, json: async () => [] };
     });
 
-    render(<HistoryPage />);
-
-    // Wait for the history fetch effect
     await act(async () => {
+      render(<HistoryPage />);
       await historyPromise;
     });
 
@@ -72,9 +70,8 @@ describe('History Page Image Display', () => {
       return { ok: true, json: async () => [] };
     });
 
-    render(<HistoryPage />);
-    // Wait for the history fetch to resolve
     await act(async () => {
+      render(<HistoryPage />);
       await historyPromise;
     });
 

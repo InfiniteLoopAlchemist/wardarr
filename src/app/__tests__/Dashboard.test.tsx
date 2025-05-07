@@ -50,11 +50,9 @@ describe('Dashboard Page Image Display', () => {
       return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
     });
 
-    render(<Dashboard />);
-    
-    // Wait specifically for the latestMatch fetch to resolve *after* initial render and effects
     await act(async () => {
-        await latestMatchPromise; // Ensure the promise our mock returns is resolved
+      render(<Dashboard />);
+      await latestMatchPromise;
     });
     
     // Now check for the image
@@ -86,12 +84,78 @@ describe('Dashboard Page Image Display', () => {
       return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
     });
 
+    await act(async () => {
       render(<Dashboard />);
-    await act(async () => { await latestMatchPromise; });
+      await latestMatchPromise;
+    });
 
     const image = await screen.findByAltText('Verification');
     const src = image.getAttribute('src')!;
     // Assert that the src ends with the proper timestamp query
     expect(src.endsWith(`?t=${timestamp}`)).toBe(true);
+  });
+
+  test('shows placeholder when no latest verification image', async () => {
+    const latestMatchPromise = Promise.resolve({
+      ok: true,
+      json: async () => ({ found: false }),
+    });
+    mockFetch.mockImplementation(async (url) => {
+      if (url === 'http://localhost:5000/api/latest-match') return latestMatchPromise;
+      return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
+    });
+    await act(async () => {
+      render(<Dashboard />);
+      await latestMatchPromise;
+    });
+    expect(screen.getByText('No verification images available yet. Run a scan to generate verification images.')).toBeInTheDocument();
+  });
+
+  test('renders ShowSelector placeholder when no shows exist', async () => {
+    // Dashboard always renders ShowSelector with empty shows by default
+    await act(async () => {
+      render(<Dashboard />);
+    });
+    expect(screen.getByText('No shows found')).toBeInTheDocument();
+  });
+});
+
+describe('Dashboard Scan Controls', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it('enables Scan All Libraries button when not scanning', async () => {
+    // Simulate initial scan status idle
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ isScanning: false, totalFiles: 5, processedFiles: 0, currentFile: '' }),
+    });
+    await act(async () => {
+      render(<Dashboard />);
+    });
+    const scanBtn = screen.getByRole('button', { name: 'Scan All Libraries' });
+    expect(scanBtn).toBeEnabled();
+  });
+
+  it('disables scan button and shows progress when scanning', async () => {
+    const statusPromise = Promise.resolve({
+      ok: true,
+      json: async () => ({ isScanning: true, totalFiles: 10, processedFiles: 2, currentFile: 'file1' }),
+    });
+    mockFetch.mockImplementation(async (url) => statusPromise);
+
+    await act(async () => {
+      render(<Dashboard />);
+      await statusPromise;
+    });
+
+    const scanningBtn = screen.getByRole('button', { name: 'Scanning...' });
+    expect(scanningBtn).toBeDisabled();
+    // Progress text should reflect 20%
+    expect(screen.getByText('Scanning... 20%')).toBeInTheDocument();
+    // Check progress bar width style
+    const progressBar = document.querySelector('div[style*="width: 20%"]');
+    expect(progressBar).toBeInTheDocument();
   });
 });

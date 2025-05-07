@@ -27,8 +27,8 @@ export default function ShowSelector({ shows, onShowSelect }: ShowSelectorProps)
       id = idMatch[1];
     }
     
-    // Clean up title by removing the ID portion
-    title = title.replace(/\[tvdbid-\d+\]/, '').trim();
+    // Clean up title by removing the year and ID portions
+    title = title.replace(/\(\d{4}\)/, '').replace(/\[tvdbid-\d+\]/, '').trim();
     
     return { title, year, id };
   };
