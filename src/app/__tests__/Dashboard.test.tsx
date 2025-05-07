@@ -80,13 +80,13 @@ describe('Dashboard Page Image Display', () => {
         last_scanned_time: timestamp
       }),
     });
-
+    
     mockFetch.mockImplementation(async (url) => {
       if (url === 'http://localhost:5000/api/latest-match') return latestMatchPromise;
       return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
     });
 
-    render(<Dashboard />);
+      render(<Dashboard />);
     await act(async () => { await latestMatchPromise; });
 
     const image = await screen.findByAltText('Verification');

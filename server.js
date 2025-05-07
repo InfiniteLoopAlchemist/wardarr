@@ -1,19 +1,16 @@
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
-import fs from 'fs';
-// import { glob } from 'glob'; // Commented out
-import Database from 'better-sqlite3';
-import { createServer } from 'http';
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const Database = require('better-sqlite3');
+const { createServer } = require('http');
+const { spawn } = require('child_process');
 
-// Get current directory name (equivalent to __dirname in CommonJS)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// __dirname and __filename are available in CommonJS
 
 // Initialize SQLite database
-const db = new Database('libraries.db');
+const dbPath = path.join(__dirname, 'libraries.db');
+const db = new Database(dbPath);
 
 // Define constants for CLIP matching (or read from config/env later)
 const clipMatcherThreshold = 0.90; // Threshold used when calling the script
@@ -1928,18 +1925,22 @@ app.use((req, res) => {
   res.status(404).json({ error: `Route not found: ${req.method} ${req.url}` });
 });
 
-// Start the server
-console.log('[SERVER] Attempting to start server listening...');
+// Export the app for integration testing
+module.exports = app;
+// Only start the server if this file is run directly
+if (require.main === module) {
+  console.log('[SERVER] Attempting to start server listening...');
 
-try {
-  // Use app.listen with explicit host binding
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
-    console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
-  });
-  console.log('[SERVER] Server listen call completed');
-} catch (error) {
-  console.error('[SERVER ERROR] Failed to start server:', error);
+  try {
+    // Use app.listen with explicit host binding
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
+      console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
+    });
+    console.log('[SERVER] Server listen call completed');
+  } catch (error) {
+    console.error('[SERVER ERROR] Failed to start server:', error);
+  }
 }
 
 // Add global error handlers

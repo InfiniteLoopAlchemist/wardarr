@@ -33,7 +33,7 @@ describe('History Page Image Display', () => {
   test('displays verification image when available for a scanned file', async () => {
     const files = [mockScannedFile(1, '/test_assets/frontend_test_image.jpg')];
     const historyPromise = Promise.resolve({
-      ok: true,
+        ok: true,
       json: async () => files,
     });
     mockFetch.mockImplementation(async (url) => {
@@ -50,7 +50,7 @@ describe('History Page Image Display', () => {
       await historyPromise;
     });
 
-    const image = await screen.findByAltText('Verification');
+    const image = await screen.findByAltText('Verification'); 
     expect(image).toBeInTheDocument();
     expect(image.getAttribute('src')).toMatch(/^\/test_assets\/frontend_test_image\.jpg/);
   });
@@ -62,7 +62,7 @@ describe('History Page Image Display', () => {
       mockScannedFile(3, '/test_assets/img3.jpg'),
     ];
     const historyPromise = Promise.resolve({
-      ok: true,
+        ok: true,
       json: async () => files,
     });
     mockFetch.mockImplementation(async (url) => {
