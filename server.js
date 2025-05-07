@@ -1479,7 +1479,8 @@ async function runClipMatcher(filePath) {
     const scriptArgs = [
       scriptPath,  // Path to the script (first argument must be the script path)
       filePath,    // Path to the video file
-      '--threshold', '0.90'  // Similarity threshold
+      '--threshold', String(clipMatcherThreshold),  // Similarity threshold
+      '--early-stop', String(clipMatcherEarlyStop) // Early stopping threshold
     ];
     
     console.log(`[CLIP-MATCHER] Command: python3 ${scriptArgs.join(' ')}`);
