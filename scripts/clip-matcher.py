@@ -324,7 +324,7 @@ def create_comparison_image(still_path, frame_path, output_path, similarity, epi
         traceback.print_exc()
         return None
 
-def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD):
+def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD, force_still_path=None, model_name_override=None):
     """Main function to process a media file."""
     try:
         import time
@@ -344,17 +344,6 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
             return False
         
         print(f"Detected: {file_info['show']} S{file_info['season']}E{file_info['episode']}")
-        
-        # Get episode images from TMDB
-        episode_images = get_episode_images(file_info['tmdbId'], file_info['season'], file_info['episode'])
-        
-        if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
-            print("No episode stills available")
-            return False
-        
-        # Limit the number of stills to process
-        stills_to_process = min(len(episode_images['stills']), max_stills)
-        print(f"Found {len(episode_images['stills'])} stills for episode (will process {stills_to_process})")
         
         # Create a unique directory for this verification based on the filename
         file_basename = os.path.basename(media_path)
@@ -376,7 +365,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
         # Initialize CLIP model
         print("Loading CLIP model...")
         # Define the model name to use
-        MODEL_NAME = "openai/clip-vit-large-patch14" # Changed from base-patch16
+        MODEL_NAME = model_name_override if model_name_override else "openai/clip-vit-large-patch14"
         try:
             model = CLIPModel.from_pretrained(MODEL_NAME, force_download=False).to(device)
             processor = CLIPProcessor.from_pretrained(MODEL_NAME, force_download=False, use_fast=False)
@@ -398,15 +387,38 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
         # For strict mode, track matches for each still
         still_matches = []
         
-        for still_index, still in enumerate(episode_images['stills'][:stills_to_process]):
-            still_url = f"{TMDB_IMAGE_BASE_URL}{still['file_path']}"
-            
-            # Prepare file path for this still
-            still_path = os.path.join(TEMP_DIR, f"{safe_dirname}_still_{still_index + 1}.jpg")
-            
-            # Download the reference still
-            print(f"\nProcessing still #{still_index + 1} of {stills_to_process}")
-            download_image(still_url, still_path)
+        if force_still_path:
+            if not os.path.exists(force_still_path):
+                print(f"ERROR: Forced still file not found: {force_still_path}")
+                return False
+            print(f"Using forced still: {force_still_path}")
+            # Create a synthetic still list for the loop
+            forced_stills_list = [{'file_path': force_still_path, 'source': 'forced'}]
+            stills_to_process_list = forced_stills_list
+            stills_to_process = 1 # Only one still to process
+        else:
+            # Get episode images from TMDB
+            episode_images = get_episode_images(file_info['tmdbId'], file_info['season'], file_info['episode'])
+            if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
+                print("No episode stills available from TMDB")
+                return False
+            stills_to_process_list = episode_images['stills']
+            stills_to_process = min(len(stills_to_process_list), max_stills)
+            print(f"Found {len(stills_to_process_list)} stills for episode from TMDB (will process up to {stills_to_process})")
+
+        for still_index, still_info in enumerate(stills_to_process_list[:stills_to_process]):
+            if force_still_path:
+                still_path = still_info['file_path'] # This is already a local path
+                print(f"\nProcessing forced still #{still_index + 1} (Path: {still_path})")
+            else:
+                still_url = f"{TMDB_IMAGE_BASE_URL}{still_info['file_path']}"
+                # Prepare file path for this still
+                still_path = os.path.join(TEMP_DIR, f"{safe_dirname}_still_{still_index + 1}.jpg")
+                # Download the reference still
+                print(f"\nProcessing still #{still_index + 1} of {stills_to_process} (TMDB)")
+                if not download_image(still_url, still_path):
+                    print(f"Failed to download still: {still_url}")
+                    continue # Skip this still
             
             # Get embedding for the reference still
             print(f"Getting embedding for still #{still_index + 1}...")
@@ -540,6 +552,10 @@ def main():
                         help='Strict mode - only verify if similarity exceeds threshold')
     parser.add_argument('--cpu', action='store_true',
                         help='Force CPU mode even if GPU is available')
+    parser.add_argument('--force-still', type=str, default=None,
+                        help='Path to a specific still image to use, bypassing TMDB lookup for stills.')
+    parser.add_argument('--model-name', type=str, default="openai/clip-vit-large-patch14",
+                        help='Name of the CLIP model to use from HuggingFace Transformers.')
     
     # Parse arguments
     args = parser.parse_args()
@@ -552,7 +568,7 @@ def main():
     
     # Process the media file with error handling
     try:
-        is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict, args.early_stop)
+        is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict, args.early_stop, args.force_still, args.model_name)
         # Exit with 0 if match, 1 if no match (standard non-error exit)
         sys.exit(0 if is_match else 1)
     except Exception as e:

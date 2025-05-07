@@ -9,7 +9,8 @@
     "lint": "next lint",
     "server": "node server.js",
     "dev:server": "NODE_ENV=development nodemon server.js",
-    "test:matcher": "node scripts/test-matcher.js"
+    "test:matcher": "node scripts/test-matcher.js",
+    "test": "jest"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
