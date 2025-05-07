@@ -410,7 +410,8 @@ export default function Dashboard() {
                 className="w-full h-auto"
                 width={500}
                 height={300}
-                unoptimized
+                // @ts-ignore
+                unoptimized="true"
               />
             </div>
           </div>
