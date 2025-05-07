@@ -45,7 +45,7 @@ Wardarr is a web application for managing TV show libraries and verifying episod
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/wardarr.git # Replace with your actual repo URL
+    git clone https://github.com/infiniteloopalchemist/wardarr.git 
     cd wardarr
     ```
 
