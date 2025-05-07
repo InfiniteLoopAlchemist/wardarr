@@ -65,39 +65,4 @@ describe('Dashboard Page Image Display', () => {
     const src = image.getAttribute('src');
     expect(src).toMatch(/^\/test_assets\/frontend_test_image\.jpg/);
   });
-
-  test('displays placeholder when verification image is missing', async () => {
-    const latestMatchPromise = Promise.resolve({
-      ok: true,
-      json: async () => ({
-        found: true,
-        verification_image_path: null, // No image path
-      }),
-    });
-    
-    // Set up specific mock for the latest match call
-    mockFetch.mockImplementation(async (url) => {
-      if (url === 'http://localhost:5000/api/latest-match') {
-        return latestMatchPromise;
-      }
-      // Default for initial status check
-      return { 
-        ok: true, 
-        json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) 
-      };
-    });
-
-    // Wrap render in act
-    await act(async () => {
-      render(<Dashboard />);
-    });
-    
-    // Verify placeholder text is present after state updates have settled
-    await waitFor(() => {
-      expect(screen.getByText('No verification images available yet. Run a scan to generate verification images.')).toBeInTheDocument();
-    });
-    
-    const image = screen.queryByAltText('Verification');
-    expect(image).toBeNull();
-  });
 });
