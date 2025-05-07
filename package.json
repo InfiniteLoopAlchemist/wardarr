@@ -10,7 +10,8 @@
     "server": "node server.js",
     "dev:server": "NODE_ENV=development nodemon server.js",
     "test:matcher": "node scripts/test-matcher.js",
-    "test": "jest"
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
