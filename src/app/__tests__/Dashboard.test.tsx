@@ -194,3 +194,74 @@ describe('Dashboard initial scan status error handling', () => {
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
   });
 });
+
+describe('Dashboard polling when scan is running', () => {
+  let setIntervalSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    jest.useFakeTimers();
+    setIntervalSpy = jest.spyOn(global, 'setInterval');
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+    setIntervalSpy.mockRestore();
+  });
+
+  it('sets up latest match polling when initial status is scanning', async () => {
+    // Mock fetch to return isScanning=true for scan status, and stub latest-match
+    mockFetch.mockImplementation(async (url) => {
+      if (url.includes('/api/scan/status')) {
+        return {
+          ok: true,
+          json: async () => ({ isScanning: true, totalFiles: 1, processedFiles: 0, currentFile: 'file' }),
+        };
+      }
+      if (url.includes('/api/latest-match')) {
+        return { ok: true, json: async () => ({ found: false }) };
+      }
+      // Default stub for other calls
+      return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
+    });
+
+    render(<Dashboard />);
+    // Verify that polling for latest match (3000ms) is scheduled
+    await waitFor(() => {
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
+    });
+  });
+});
+
+describe('Dashboard initial idle polling', () => {
+  let setIntervalSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    jest.useFakeTimers();
+    setIntervalSpy = jest.spyOn(global, 'setInterval');
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+    setIntervalSpy.mockRestore();
+  });
+
+  it('schedules latest match polling only when initial status is idle', async () => {
+    mockFetch.mockImplementation(async (url) => {
+      if (url.includes('/api/scan/status')) {
+        return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
+      }
+      if (url.includes('/api/latest-match')) {
+        return { ok: true, json: async () => ({ found: false }) };
+      }
+      return { ok: true, json: async () => ({ isScanning: false, totalFiles: 0, processedFiles: 0, currentFile: '' }) };
+    });
+
+    render(<Dashboard />);
+    await waitFor(() => {
+      // Only one polling interval for latest match should be set
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    });
+    // Verify that the interval was set for latest match (3000ms)
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
+  });
+});

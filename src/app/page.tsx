@@ -57,7 +57,7 @@ export default function Dashboard() {
   });
   const [latestScan, setLatestScan] = useState<ScannedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [shows] = useState<Show[]>([]);
+  const [shows, setShows] = useState<Show[]>([]);
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
@@ -202,7 +202,25 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch list of libraries for browsing
+  const fetchLibraries = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/libraries');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const libs: { id: number; title: string; path: string; type: string }[] = await response.json();
+      const showsData: Show[] = libs.map(lib => ({ name: lib.title, path: lib.path }));
+      setShows(showsData);
+    } catch (error: any) {
+      console.error('Error fetching libraries:', error);
+      setError('Failed to fetch libraries');
+    }
+  };
+
   useEffect(() => {
+    // Load libraries on mount
+    fetchLibraries();
     let scanIntervalId: NodeJS.Timeout | null = null;
     let matchIntervalId: NodeJS.Timeout | null = null;
 
