@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 interface Episode {
   filename: string;
@@ -26,6 +26,58 @@ interface EpisodeSelectorProps {
   episodes: Episode[];
 }
 
+// Extracted matcher function for testing and reuse
+export async function runClipMatcherFn(
+  selectedEpisode: Episode | null,
+  setIsRunningMatcher: React.Dispatch<React.SetStateAction<boolean>>,
+  setMatchResult: React.Dispatch<React.SetStateAction<MatchResult | null>>
+) {
+  if (!selectedEpisode) {
+    return;
+  }
+  setIsRunningMatcher(true);
+  setMatchResult(null);
+  try {
+    const response = await fetch('http://localhost:5000/api/match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ episodePath: selectedEpisode.path }),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      setMatchResult({
+        status: data.success ? 'success' : 'error',
+        message: data.error || `Match score: ${data.matchScore}`,
+        directory: data.verificationPath,
+        images: data.verificationPath
+          ? [
+              {
+                index: 0,
+                url: `/verification/${data.verificationPath.split('/').pop()}/best_match.jpg`,
+                name: 'Best match',
+              },
+            ]
+          : [],
+      });
+    } else {
+      console.error('Error running clip matcher:', data.error);
+      setMatchResult({ status: 'error', message: data.error });
+    }
+  } catch (error) {
+    console.error('Error running clip matcher:', error);
+    setMatchResult({ status: 'error', message: 'Failed to run clip matcher' });
+  } finally {
+    setIsRunningMatcher(false);
+  }
+}
+
+// Compare season keys, with 'Unknown' forced last
+export function compareSeasons(a: string, b: string): number {
+  if (a === 'Unknown') return 1;
+  if (b === 'Unknown') return -1;
+  return parseInt(a) - parseInt(b);
+}
+
 export default function EpisodeSelector({ episodes }: EpisodeSelectorProps) {
   const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
   const [isRunningMatcher, setIsRunningMatcher] = useState(false);
@@ -41,12 +93,8 @@ export default function EpisodeSelector({ episodes }: EpisodeSelectorProps) {
     return acc;
   }, {} as Record<string, Episode[]>);
   
-  // Sort seasons numerically
-  const sortedSeasons = Object.keys(episodesBySeason).sort((a, b) => {
-    if (a === 'Unknown') return 1;
-    if (b === 'Unknown') return -1;
-    return parseInt(a) - parseInt(b);
-  });
+  // Sort seasons numerically using compareSeasons
+  const sortedSeasons = Object.keys(episodesBySeason).sort(compareSeasons);
   
   const handlePlayEpisode = (episode: Episode) => {
     setSelectedEpisode(episode);
@@ -79,48 +127,9 @@ export default function EpisodeSelector({ episodes }: EpisodeSelectorProps) {
     window.open(videoUrl, '_blank');
   };
   
-  // Run the clip matcher script
-  const runClipMatcher = async () => {
-    if (!selectedEpisode) return;
-    
-    setIsRunningMatcher(true);
-    setMatchResult(null);
-    
-    try {
-      const response = await fetch('http://localhost:5000/api/match', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          episodePath: selectedEpisode.path
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        setMatchResult({
-          status: data.success ? 'success' : 'error',
-          message: data.error || `Match score: ${data.matchScore}`,
-          directory: data.verificationPath,
-          images: data.verificationPath ? [{
-            index: 0,
-            url: `/verification/${data.verificationPath.split('/').pop()}/best_match.jpg`,
-            name: 'Best match'
-          }] : []
-        });
-      } else {
-        console.error('Error running clip matcher:', data.error);
-        setMatchResult({ status: 'error', message: data.error });
-      }
-    } catch (error) {
-      console.error('Error running clip matcher:', error);
-      setMatchResult({ status: 'error', message: 'Failed to run clip matcher' });
-    } finally {
-      setIsRunningMatcher(false);
-    }
-  };
+  // Use extracted matcher function
+  const runClipMatcher = () =>
+    runClipMatcherFn(selectedEpisode, setIsRunningMatcher, setMatchResult);
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
