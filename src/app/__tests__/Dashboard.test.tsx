@@ -159,3 +159,38 @@ describe('Dashboard Scan Controls', () => {
     expect(progressBar).toBeInTheDocument();
   });
 });
+
+describe('Dashboard initial scan status error handling', () => {
+  let setIntervalSpy: jest.SpyInstance;
+
+  beforeAll(() => {
+    jest.useFakeTimers();
+    setIntervalSpy = jest.spyOn(global, 'setInterval');
+  });
+
+  beforeEach(() => {
+    // Mock fetch to reject for the initial status call
+    (global.fetch as jest.Mock) = jest.fn().mockRejectedValue(new Error('fetch failed'));
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+    setIntervalSpy.mockRestore();
+  });
+
+  it('displays error banner and schedules latest match polling when initial fetch fails', async () => {
+    render(<Dashboard />);
+
+    // Wait for error message to appear
+    await waitFor(() => {
+      expect(screen.getByText('Failed to fetch initial scan status.')).toBeInTheDocument();
+    });
+
+    // Verify that polling for latest match is scheduled
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
+  });
+});
