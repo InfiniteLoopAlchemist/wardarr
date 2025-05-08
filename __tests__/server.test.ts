@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 // Remove existing test database so we start with a clean state
-const dbFile = path.join(__dirname, '..', 'libraries.db');
+const dbFile = path.join(__dirname, '..', 'libraries.test.db');
 if (fs.existsSync(dbFile)) fs.unlinkSync(dbFile);
 import request from 'supertest';
 const app = require('../server');
