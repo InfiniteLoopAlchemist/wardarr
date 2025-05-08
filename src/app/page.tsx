@@ -423,7 +423,7 @@ export default function Dashboard() {
             
             <div className="bg-black rounded overflow-hidden">
               <Image
-                src={`${latestScan.verification_image_path}?t=${latestScan.last_scanned_time}`}
+                src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${latestScan.verification_image_path}?t=${latestScan.last_scanned_time}`}
                 alt="Verification"
                 className="w-full h-auto"
                 width={500}

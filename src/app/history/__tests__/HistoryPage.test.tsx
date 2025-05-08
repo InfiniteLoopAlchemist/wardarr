@@ -50,7 +50,7 @@ describe('History Page Image Display', () => {
 
     const image = await screen.findByAltText('Verification'); 
     expect(image).toBeInTheDocument();
-    expect(image.getAttribute('src')).toMatch(/^\/test_assets\/frontend_test_image\.jpg/);
+    expect(image.getAttribute('src')).toContain('/test_assets/frontend_test_image.jpg');
   });
 
   test('renders an image for each scanned file in history', async () => {
@@ -79,7 +79,7 @@ describe('History Page Image Display', () => {
     expect(images).toHaveLength(files.length);
     files.forEach((file, idx) => {
       const src = images[idx].getAttribute('src')!;
-      expect(src).toMatch(new RegExp(`^${file.verification_image_path}`));
+      expect(src).toContain(file.verification_image_path);
     });
   });
 }); 

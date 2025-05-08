@@ -61,7 +61,7 @@ describe('Dashboard Page Image Display', () => {
     
     // Check that src starts with the expected path, ignoring any query parameters
     const src = image.getAttribute('src');
-    expect(src).toMatch(/^\/test_assets\/frontend_test_image\.jpg/);
+    expect(src).toContain('/test_assets/frontend_test_image.jpg');
   });
 
   test('appends cache-busting timestamp to image src', async () => {

@@ -115,7 +115,7 @@ export default function HistoryPage() {
               {file.verification_image_path ? (
                 <div className="relative">
                   <img 
-                    src={`${file.verification_image_path}?t=${file.last_scanned_time}`} 
+                    src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${file.verification_image_path}?t=${file.last_scanned_time}`} 
                     alt="Verification" 
                     className="w-full h-auto"
                   />
