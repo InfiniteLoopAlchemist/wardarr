@@ -8,6 +8,7 @@ import { useScan } from '@/hooks/useScan';
 import { useLatestMatch } from '@/hooks/useLatestMatch';
 import { useLibraries } from '@/hooks/useLibraries';
 import { useMediaBrowser } from '@/hooks/useMediaBrowser';
+import { getSeasonCardClass } from '@/lib/uiUtils';
 
 interface ScanStatus {
   isScanning: boolean;
@@ -178,9 +179,7 @@ export default function Dashboard() {
                   <div
                     key={season.path}
                     onClick={() => selectSeason(season)}
-                    className={`border border-gray-700 rounded p-3 hover:bg-gray-700 cursor-pointer ${
-                      selectedSeason?.path === season.path ? 'bg-gray-700 border-blue-500' : ''
-                    }`}
+                    className={`border border-gray-700 rounded p-3 hover:bg-gray-700 cursor-pointer ${getSeasonCardClass(selectedSeason?.path === season.path)}`}
                   >
                     <div className="font-medium">{season.name}</div>
                   </div>
