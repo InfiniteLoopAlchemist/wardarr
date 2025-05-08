@@ -1,6 +1,6 @@
 // src/app/__tests__/Dashboard.test.tsx
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Dashboard from '../page'; // Adjust path if your page.tsx is elsewhere
 

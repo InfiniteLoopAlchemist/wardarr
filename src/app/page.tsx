@@ -422,14 +422,11 @@ export default function Dashboard() {
             </div>
             
             <div className="bg-black rounded overflow-hidden">
-              <Image
+              <img
+                key={latestScan.last_scanned_time}
                 src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${latestScan.verification_image_path}?t=${latestScan.last_scanned_time}`}
                 alt="Verification"
                 className="w-full h-auto"
-                width={500}
-                height={300}
-                // @ts-ignore
-                unoptimized="true"
               />
             </div>
           </div>
