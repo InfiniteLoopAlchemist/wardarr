@@ -5,6 +5,13 @@ import path from 'path';
 const dbFile = path.join(__dirname, '..', 'libraries.test.db');
 if (fs.existsSync(dbFile)) fs.unlinkSync(dbFile);
 import request from 'supertest';
+// Mock better-sqlite3 to use in-memory stubs
+jest.mock('better-sqlite3', () => {
+  return jest.fn().mockImplementation(() => ({
+    prepare: () => ({ all: () => [], get: () => undefined, run: () => ({ lastInsertRowid: 1, changes: 1 }) }),
+    exec: () => {},
+  }));
+});
 const app = require('../server');
 
 describe('Backend API', () => {

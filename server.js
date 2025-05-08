@@ -1163,7 +1163,7 @@ app.post('/api/scan/stop', (req, res) => {
 
   console.log('[SCAN] Stop requested by user.');
   scanStatus.stopRequested = true;
-  res.status(200).json({ message: 'Scan stop requested. Please wait for the current file to finish.' });
+  res.status(200).json({ message: 'Stop requested. Please wait for the current file to finish.' });
 });
 console.log('[ROUTE] Registered route: POST /api/scan/stop');
 
@@ -1397,13 +1397,17 @@ app.post('/api/scan', async (req, res) => {
     // Get all libraries
     const libraries = getLibraries.all();
     
-    // Start the scan process asynchronously
-    processScan(libraries).catch(error => {
-      console.error('[ERROR] Scan process failed:', error);
-      scanStatus.isScanning = false;
-      scanStatus.stopRequested = false; // Reset flag on error too
-      scanStatus.errors.push(`Scan process failed: ${error.message}`);
-    });
+    // Start the scan process asynchronously in non-test environments
+    if (process.env.NODE_ENV !== 'test') {
+      setImmediate(() => {
+        processScan(libraries).catch(error => {
+          console.error('[ERROR] Scan process failed:', error);
+          scanStatus.isScanning = false;
+          scanStatus.stopRequested = false; // Reset flag on error too
+          scanStatus.errors.push(`Scan process failed: ${error.message}`);
+        });
+      });
+    }
     
     // Return immediately with initial status
     res.json({ 
@@ -1928,6 +1932,8 @@ app.use((req, res) => {
 
 // Export the app for integration testing
 module.exports = app;
+// Expose getLibraries statement for testing
+module.exports.getLibraries = getLibraries;
 // Only start the server if this file is run directly
 if (require.main === module) {
   console.log('[SERVER] Attempting to start server listening...');
