@@ -118,6 +118,13 @@ describe('Dashboard Page Image Display', () => {
     });
     expect(screen.getByText('No shows found')).toBeInTheDocument();
   });
+
+  test('does not render seasons section when no show selected', async () => {
+    await act(async () => {
+      render(<Dashboard />);
+    });
+    expect(screen.queryByText('Seasons')).toBeNull();
+  });
 });
 
 describe('Dashboard Scan Controls', () => {

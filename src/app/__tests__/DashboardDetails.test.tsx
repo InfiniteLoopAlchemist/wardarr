@@ -184,5 +184,10 @@ describe('Dashboard Detailed UI Branches', () => {
     const season2Item = await screen.findByText('Season 2');
     const season2El = season2Item.parentElement!;
     expect(season2El).not.toHaveClass('bg-gray-700', 'border-blue-500');
+
+    // Clicking on the second season should update the highlight
+    fireEvent.click(season2Item);
+    expect(season2El).toHaveClass('bg-gray-700', 'border-blue-500');
+    expect(season1El).not.toHaveClass('bg-gray-700', 'border-blue-500');
   });
 }); 
