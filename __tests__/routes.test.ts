@@ -3,8 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import request from 'supertest';
 
-// Remove existing database to start with clean state
-const dbFile = path.join(__dirname, '..', 'libraries.db');
+// Remove existing test database to start with clean state
+const dbFile = path.join(__dirname, '..', 'libraries.test.db');
 if (fs.existsSync(dbFile)) fs.unlinkSync(dbFile);
 
 const app = require('../server');

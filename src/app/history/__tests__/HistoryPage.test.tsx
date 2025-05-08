@@ -77,9 +77,12 @@ describe('History Page Image Display', () => {
 
     const images = await screen.findAllByAltText('Verification');
     expect(images).toHaveLength(files.length);
-    files.forEach((file, idx) => {
+    // The component sorts history by last_scanned_time (newest first), so sort files likewise
+    const sortedFiles = [...files].sort((a, b) => b.last_scanned_time - a.last_scanned_time);
+    sortedFiles.forEach((file, idx) => {
       const src = images[idx].getAttribute('src')!;
-      expect(src).toContain(file.verification_image_path);
+      // Use non-null assertion since mock files have a verification_image_path
+      expect(src).toContain(file.verification_image_path!);
     });
   });
 }); 
