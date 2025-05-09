@@ -111,7 +111,11 @@ async function runClipMatcher(filePath) {
       const jsonMatches = text.match(/({[\s\S]*})/g);
       if (jsonMatches) {
         for (const jm of jsonMatches) {
-          try { jsonOutput = JSON.parse(jm); } catch {};
+          try {
+            jsonOutput = JSON.parse(jm);
+          } catch (parseErr) {
+            console.error('[ERROR] Failed to parse JSON from clip matcher stdout:', parseErr);
+          }
         }
       }
     });

@@ -14,10 +14,7 @@ export const getContent = async (req: Request, res: Response) => {
   if (!fullPath.startsWith('/')) fullPath = '/' + fullPath;
 
   try {
-    const stats = await fs.promises.stat(fullPath);
-    if (!stats.isDirectory()) {
-      return res.status(400).json({ error: 'Directory not found' });
-    }
+    await fs.promises.access(fullPath, fs.constants.R_OK);
   } catch {
     return res.status(400).json({ error: 'Directory not found' });
   }
