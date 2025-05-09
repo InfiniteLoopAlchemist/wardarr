@@ -136,7 +136,7 @@ export default function Dashboard() {
             <div className="flex items-center mb-3">
               <div className={`w-3 h-3 rounded-full mr-2 ${latestScan.is_verified ? 'bg-green-500' : 'bg-red-500'}`}></div>
               <span className="font-medium">
-                {latestScan.is_verified ? 'Verified' : 'Not Verified'}
+                {latestScan.is_verified ? 'Verified' : 'Not Verified'} 
                 {latestScan.match_score != null && ` (Score: ${latestScan.match_score!.toFixed(2)})`}
               </span>
             </div>

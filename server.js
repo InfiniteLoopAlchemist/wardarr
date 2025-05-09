@@ -1382,8 +1382,8 @@ app.post('/api/scan', async (req, res) => {
   }
   
   try {
-    // Reset scan status
-    scanStatus = {
+    // Reset scan status by mutating existing object
+    Object.assign(scanStatus, {
       isScanning: true,
       totalFiles: 0,
       processedFiles: 0,
@@ -1392,7 +1392,7 @@ app.post('/api/scan', async (req, res) => {
       errors: [],
       latestMatch: null, // Reset latest match
       stopRequested: false // Reset stopRequested flag
-    };
+    });
     
     // Get all libraries
     const libraries = getLibraries.all();

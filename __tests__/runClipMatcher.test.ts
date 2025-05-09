@@ -344,6 +344,22 @@ describe('runClipMatcher helper', () => {
       error: expect.stringContaining('Process exited with code 1 without output')
     });
   });
+
+  it('detects verificationPath fallback when chunks split across data events', async () => {
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const fakeProc = new FakeProcess();
+    spawnMock.mockReturnValue(fakeProc);
+
+    const promise = runClipMatcher('/tmp/video.mp4');
+    // Emit split chunks to force fallback detection in final check
+    fakeProc.stdout.emit('data', Buffer.from('Verification images saved to:'));
+    fakeProc.stdout.emit('data', Buffer.from(' /fallback/path\n'));
+    fakeProc.emit('close', 0);
+
+    const result = await promise;
+    expect(result.success).toBe(true);
+    expect(result.verificationPath).toBe('/fallback/path');
+  });
 });
 
 describe('sanitizeForSQLite helper', () => {

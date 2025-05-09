@@ -29,7 +29,7 @@ describe('EpisodeSelector component', () => {
     expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
     expect(screen.getByText('Close Player')).toBeInTheDocument();
   });
-});
+}); 
 
 describe('EpisodeSelector additional branches', () => {
   beforeEach(() => {
