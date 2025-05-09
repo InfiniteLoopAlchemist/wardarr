@@ -177,11 +177,14 @@ const sanitizeForSQLite = (value) => {
 // Asynchronous scan processor
 async function processScan(libraries) {
   scanStatus.stopRequested = false;
-  // Use DB helpers from server and local scan logic functions to avoid circular dependency warnings
-  const { getScannedFileByPath: dynGet, addScannedFile: dynAdd, updateScannedFile: dynUpdate } = require('../server.ts');
-  const dynFind = findMediaFiles;
-  const dynMatch = runClipMatcher;
-  const dynCopy = copyVerificationImage;
+  // Pull scanning functions and DB helpers from main server export so tests can stub them
+  const serverModule = require('../server');
+  const dynFind = serverModule.findMediaFiles || findMediaFiles;
+  const dynMatch = serverModule.runClipMatcher || runClipMatcher;
+  const dynCopy = serverModule.copyVerificationImage || copyVerificationImage;
+  const dynGet = serverModule.getScannedFileByPath;
+  const dynAdd = serverModule.addScannedFile;
+  const dynUpdate = serverModule.updateScannedFile;
   try {
     const enabled = libraries.filter(l => l.is_enabled === 1);
     if (enabled.length === 0) {

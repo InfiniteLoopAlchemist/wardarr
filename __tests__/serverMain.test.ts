@@ -4,9 +4,9 @@ import { spawnSync } from 'child_process';
 
 describe('Server CLI startup', () => {
   it('logs startup messages when run directly', () => {
-    const serverPath = path.resolve(__dirname, '../server.js');
+    const serverPath = path.resolve(__dirname, '../server.ts');
     // Use PORT=0 for ephemeral port and set a timeout to kill the process
-    const result = spawnSync('node', [serverPath], {
+    const result = spawnSync('node', ['-r', 'ts-node/register', serverPath], {
       env: { ...process.env, PORT: '0' },
       encoding: 'utf8',
       timeout: 3000,

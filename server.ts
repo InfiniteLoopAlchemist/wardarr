@@ -86,6 +86,19 @@ console.log('[SERVER] CORS middleware configured');
 // Track connections
 const server = createServer(app);
 
+// Log new connections and socket events
+server.on('connection', (socket) => {
+  console.log(`[CONNECTION] New connection from ${socket.remoteAddress}:${socket.remotePort}`);
+  
+  socket.on('close', (hadError) => {
+    console.log(`[CONNECTION] Closed connection from ${socket.remoteAddress}:${socket.remotePort} ${hadError ? 'with error' : 'cleanly'}`);
+  });
+  
+  socket.on('error', (err) => {
+    console.error(`[CONNECTION ERROR] ${socket.remoteAddress}:${socket.remotePort} - ${err.message}`);
+  });
+});
+
 // Add middleware to parse JSON and handle errors
 app.use(express.json({
   verify: (req, res, buf) => {
