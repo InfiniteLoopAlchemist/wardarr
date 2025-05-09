@@ -613,7 +613,7 @@ module.exports.scanStatus = scanStatus;
 module.exports.findMediaFiles = findMediaFiles;
 module.exports.getScannedFileByPath = getScannedFileByPath;
 module.exports.addScannedFile = addScannedFile;
-module.exports.updateScannedFile = updateScannedFile;
+module.exports.updateScannedFile = app.updateScannedFile;
 module.exports.runClipMatcher = runClipMatcher;
 module.exports.copyVerificationImage = copyVerificationImage;
 // Expose sanitizeForSQLite for testing
