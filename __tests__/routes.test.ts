@@ -81,4 +81,11 @@ describe('Core API Routes', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
   });
+
+  test('unknown route returns 404 JSON error', async () => {
+    const res = await request(app).get('/no-such-route');
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error');
+    expect(res.body.error).toMatch(/Route not found/);
+  });
 }); 

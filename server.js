@@ -1950,6 +1950,10 @@ module.exports.addScannedFile = addScannedFile;
 module.exports.updateScannedFile = updateScannedFile;
 module.exports.runClipMatcher = runClipMatcher;
 module.exports.copyVerificationImage = copyVerificationImage;
+// Expose sanitizeForSQLite for testing
+module.exports.sanitizeForSQLite = sanitizeForSQLite;
+// Expose addLibrary statement for testing
+module.exports.addLibrary = addLibrary;
 // Only start the server if this file is run directly
 if (require.main === module) {
   console.log('[SERVER] Attempting to start server listening...');

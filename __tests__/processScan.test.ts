@@ -103,4 +103,77 @@ describe('processScan function', () => {
     expect(scanStatus.latestMatch).toBeNull();
     expect(addScannedFile.run).toHaveBeenCalled();
   });
+
+  it('handles error without verificationPath', async () => {
+    // Stub directory read to return one video file entry
+    jest.spyOn(fs.promises, 'readdir').mockResolvedValue([
+      { name: 'video3.mp4', isDirectory: () => false }
+    ] as any);
+    // Stub file stats
+    jest.spyOn(fs.promises, 'stat').mockResolvedValue({ mtimeMs: 300 } as any);
+    // No existing record
+    getScannedFileByPath.get = jest.fn().mockReturnValue(undefined);
+    // Stub matcher failure without verificationPath
+    jest.spyOn(server, 'runClipMatcher').mockResolvedValue({
+      success: false,
+      error: 'Process exited with code 3: Something failed',
+      exitCode: 3
+    } as any);
+    // Stub DB operations
+    addScannedFile.run = jest.fn();
+    updateScannedFile.run = jest.fn();
+
+    const libs = [{ id: 1, is_enabled: 1, title: 'Lib', path: '/tmp' }];
+    await processScan(libs);
+
+    // Should attempt to add a new record even without verificationPath
+    expect(addScannedFile.run).toHaveBeenCalled();
+  });
+
+  it('catches errors from findMediaFiles and resets status', async () => {
+    // Stub findMediaFiles to throw
+    jest.spyOn(server, 'findMediaFiles').mockRejectedValue(new Error('scanfail'));
+    const libs = [{ id: 1, is_enabled: 1, title: 'Lib', path: '/tmp' }];
+    await processScan(libs);
+
+    // Outer catch should reset scanning flags
+    expect(scanStatus.isScanning).toBe(false);
+    expect(scanStatus.stopRequested).toBe(false);
+  });
+
+  it('reuses existing verification image on scan error when no new image is generated', async () => {
+    // Stub findMediaFiles to return one video file entry
+    jest.spyOn(server, 'findMediaFiles').mockResolvedValue([
+      { path: '/tmp/video4.mp4', libraryId: 1 }
+    ]);
+    // Stub directory read (not used directly, kept for completeness)
+    jest.spyOn(fs.promises, 'readdir').mockResolvedValue([
+      { name: 'video4.mp4', isDirectory: () => false }
+    ] as any);
+    // Stub file stats
+    jest.spyOn(fs.promises, 'stat').mockResolvedValue({ mtimeMs: 400 } as any);
+    // Existing record with a previous verification image
+    getScannedFileByPath.get = jest.fn().mockReturnValue({ verification_image_path: '/existing/path.jpg', file_modified_time: 100 });
+    // Stub matcher failure
+    jest.spyOn(server, 'runClipMatcher').mockResolvedValue({
+      success: false,
+      error: 'Error occurred',
+      exitCode: 4,
+      verificationPath: null,
+    } as any);
+    // Stub image copy
+    jest.spyOn(server, 'copyVerificationImage').mockResolvedValue(null);
+    // Stub DB operations
+    addScannedFile.run = jest.fn();
+    updateScannedFile.run = jest.fn();
+
+    const libs = [{ id: 1, is_enabled: 1, title: 'Lib', path: '/tmp' }];
+    await processScan(libs);
+
+    // Should reuse existing image by calling updateScannedFile
+    expect(updateScannedFile.run).toHaveBeenCalled();
+    // The second argument to updateScannedFile.run should be the existing image path
+    const callArgs = updateScannedFile.run.mock.calls[0];
+    expect(callArgs[1]).toBe('/existing/path.jpg');
+  });
 }); 
