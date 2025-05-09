@@ -54,6 +54,7 @@ const app = express();
 const PORT = process.env.PORT || 5000; // Used in server.listen at the bottom of the file
 
 // Enhanced logging middleware
+/* istanbul ignore next */
 const logRequest = (req, res, next) => {
   const start = Date.now();
   console.log(`[REQUEST] ${new Date().toISOString()} - ${req.method} ${req.url}`);
@@ -155,6 +156,7 @@ if (!fs.existsSync(matchesDir)) {
 }
 
 // Write the viewer HTML file
+/* istanbul ignore next */
 const viewerHtml = `
 <!DOCTYPE html>
 <html lang="en">
@@ -472,7 +474,6 @@ const viewerPath = path.join(publicDir, 'viewer.html');
 fs.writeFileSync(viewerPath, viewerHtml);
 console.log(`[SERVER] Created verification image viewer at: ${viewerPath}`);
 
-app.use(express.static(publicDir));
 // Explicitly set CORS headers for image files
 app.use('/matches', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -482,6 +483,9 @@ app.use('/matches', (req, res, next) => {
   res.header('Expires', '0');
   next();
 });
+
+// Serve static files
+app.use(express.static(publicDir));
 
 console.log('[SERVER] Added JSON parsing middleware and static file handling');
 

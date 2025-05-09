@@ -227,4 +227,22 @@ describe('processScan error handling', () => {
     expect(serverModule.scanStatus.isScanning).toBe(false);
     expect(serverModule.scanStatus.stopRequested).toBe(false);
   });
+});
+
+describe('JSON parse error middleware and static viewer', () => {
+  it('returns 400 on invalid JSON body to POST /api/libraries', async () => {
+    const res = await request(app)
+      .post('/api/libraries')
+      .set('Content-Type', 'application/json')
+      .send('{bad json}');
+    expect(res.status).toBe(400);
+    expect(res.text).toMatch(/Invalid JSON/);
+  });
+
+  it('serves the viewer HTML on GET /viewer.html', async () => {
+    const res = await request(app).get('/viewer.html');
+    expect(res.status).toBe(200);
+    expect(res.header['content-type']).toMatch(/html/);
+    expect(res.text).toMatch(/<title>Verification Image Viewer<\/title>/);
+  });
 }); 
