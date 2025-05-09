@@ -8,9 +8,9 @@ const { spawn } = require('child_process');
 
 // __dirname and __filename are available in CommonJS
 
-// Initialize SQLite database: use separate file for tests
-const dbFilename = process.env.NODE_ENV === 'test' ? 'libraries.test.db' : 'libraries.db';
-const dbPath = path.join(__dirname, dbFilename);
+// Initialize SQLite database: use in-memory database for tests, file for production
+const isTest = process.env.NODE_ENV === 'test';
+const dbPath = isTest ? ':memory:' : path.join(__dirname, 'libraries.db');
 const db = new Database(dbPath);
 
 // Define constants for CLIP matching (or read from config/env later)
