@@ -7,7 +7,7 @@ const getLibrariesStmt = db.prepare('SELECT * FROM libraries');
 export const getLibraries = (req: Request, res: Response) => {
   try {
     // Use server export if available to allow stubbing in tests
-    const serverModule = require('../../server');
+    const serverModule = require('../../server.ts');
     const stmt = serverModule.getLibraries || getLibrariesStmt;
     const libraries = stmt.all();
     return res.json(libraries);
@@ -39,7 +39,7 @@ export const createLibrary = async (req: Request, res: Response) => {
 
   try {
     // Use server export if available to allow stubbing in tests
-    const serverModule = require('../../server');
+    const serverModule = require('../../server.ts');
     const stmt = serverModule.addLibrary || addLibraryStmt;
     const result = stmt.run(title, libraryPath, type);
     return res.json({ message: 'Library added successfully', id: result.lastInsertRowid });

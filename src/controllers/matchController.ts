@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
 import path from 'path';
 import { validatePath } from '../utils';
-
-const { runClipMatcher, copyVerificationImage } = require('../../server');
+const { runClipMatcher, copyVerificationImage } = require('../serverLogic.ts');
 
 export const handleMatch = async (req: Request, res: Response) => {
   const episodePath = req.body.episodePath as string;

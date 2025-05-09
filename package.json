@@ -7,8 +7,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "next lint",
-    "server": "node server.js",
-    "dev:server": "NODE_ENV=development nodemon server.js",
+    "server": "ts-node server.ts",
+    "dev:server": "NODE_ENV=development nodemon --exec ts-node server.ts",
     "test:matcher": "node scripts/test-matcher.js",
     "test": "jest --coverage",
     "test:coverage": "jest --coverage"

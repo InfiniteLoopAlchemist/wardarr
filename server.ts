@@ -6,18 +6,18 @@ const path = require('path');
 const fs = require('fs');
 const { createServer } = require('http');
 const { spawn } = require('child_process');
-const { browseRoot, browseLevel } = require('./src/controllers/browseController');
-const { handleMatch } = require('./src/controllers/matchController');
-const { startScan, getScanStatus, stopScan } = require('./src/controllers/scanController');
-const { getLatestVerification, getLatestMatch } = require('./src/controllers/latestController');
-const { getHistory, clearHistory } = require('./src/controllers/historyController');
-const { testRoute, rootRoute } = require('./src/controllers/healthController');
-const { getLibraries: getLibrariesHandler, createLibrary: createLibraryHandler, updateLibrary: updateLibraryHandler, deleteLibrary: deleteLibraryHandler } = require('./src/controllers/libraryController');
-const { getContent, legacyShows, legacySeasons, legacyEpisodes, pathBased: contentPathBased } = require('./src/controllers/contentController');
+const { browseRoot, browseLevel } = require('./src/controllers/browseController.ts');
+const { handleMatch } = require('./src/controllers/matchController.ts');
+const { startScan, getScanStatus, stopScan } = require('./src/controllers/scanController.ts');
+const { getLatestVerification, getLatestMatch } = require('./src/controllers/latestController.ts');
+const { getHistory, clearHistory } = require('./src/controllers/historyController.ts');
+const { testRoute, rootRoute } = require('./src/controllers/healthController.ts');
+const { getLibraries: getLibrariesHandler, createLibrary: createLibraryHandler, updateLibrary: updateLibraryHandler, deleteLibrary: deleteLibraryHandler } = require('./src/controllers/libraryController.ts');
+const { getContent, legacyShows, legacySeasons, legacyEpisodes, pathBased: contentPathBased } = require('./src/controllers/contentController.ts');
 // Import core logic and status from serverLogic
-const { scanStatus, findMediaFiles, processScan, runClipMatcher, copyVerificationImage, sanitizeForSQLite } = require('./src/serverLogic');
+const { scanStatus, findMediaFiles, processScan, runClipMatcher, copyVerificationImage, sanitizeForSQLite } = require('./src/serverLogic.ts');
 // Use shared database module for SQLite
-const db = require('./src/db').default;
+const db = require('./src/db.ts').default;
 // Directory for public assets and matching logic imported from serverLogic
 // [Database tables are initialized in src/db.ts]
 
@@ -85,18 +85,6 @@ console.log('[SERVER] CORS middleware configured');
 
 // Track connections
 const server = createServer(app);
-
-server.on('connection', (socket) => {
-  console.log(`[CONNECTION] New connection from ${socket.remoteAddress}:${socket.remotePort}`);
-  
-  socket.on('close', (hadError) => {
-    console.log(`[CONNECTION] Closed connection from ${socket.remoteAddress}:${socket.remotePort} ${hadError ? 'with error' : 'cleanly'}`);
-  });
-  
-  socket.on('error', (err) => {
-    console.error(`[CONNECTION ERROR] ${socket.remoteAddress}:${socket.remotePort} - ${err.message}`);
-  });
-});
 
 // Add middleware to parse JSON and handle errors
 app.use(express.json({
@@ -626,17 +614,21 @@ module.exports.addLibrary = addLibraryStmt;
 // Only start the server if this file is run directly
 if (require.main === module) {
   console.log('[SERVER] Attempting to start server listening...');
-
-  try {
-    // Use app.listen with explicit host binding
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
-      console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
-    });
-    console.log('[SERVER] Server listen call completed');
-  } catch (error) {
-    console.error('[SERVER ERROR] Failed to start server:', error);
-  }
+  // Handle listen errors such as EADDRINUSE
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[SERVER ERROR] Port ${PORT} is already in use`);
+    } else {
+      console.error('[SERVER ERROR] Failed to start server:', err);
+    }
+    process.exit(1);
+  });
+  // Start listening on the HTTP server we created earlier
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
+    console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
+  });
+  console.log('[SERVER] Server listen call completed');
 }
 
 // Add global error handlers
