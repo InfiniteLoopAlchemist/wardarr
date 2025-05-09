@@ -511,26 +511,29 @@ app.post('/api/libraries', createLibraryHandler);
 app.put('/api/libraries/:id', updateLibraryHandler);
 app.delete('/api/libraries/:id', deleteLibraryHandler);
 
-// Content routes
-// Path-based content middleware (handles percent-encoded slashes)
+// Path-based content redirection middleware (handles percent-encoded paths)
 app.use((req, res, next) => {
-  console.log(`[DEBUG PATH-MIDDLEWARE] method=${req.method}, url=${req.url}, originalUrl=${req.originalUrl}`);
-  if (req.method !== 'GET') return next();
-  const rawUrl = req.originalUrl.split('?')[0];
-  const prefix = '/api/path/';
-  if (!rawUrl.startsWith(prefix)) return next();
-  const after = rawUrl.slice(prefix.length);
-  const slashIndex = after.indexOf('/');
-  if (slashIndex === -1) {
-    const type = after;
-    return res.status(400).json({ error: `Missing encodedPath parameter for ${type}` });
+  if (req.method === 'GET') {
+    const rawUrl = req.originalUrl.split('?')[0];
+    const prefix = '/api/path/';
+    if (rawUrl.startsWith(prefix)) {
+      const after = rawUrl.slice(prefix.length);
+      const slashIndex = after.indexOf('/');
+      if (slashIndex === -1) {
+        const type = after;
+        return res.status(400).json({ error: `Missing encodedPath parameter for ${type}` });
+      }
+      const type = after.slice(0, slashIndex);
+      const encoded = after.slice(slashIndex + 1);
+      const decoded = decodeURIComponent(encoded);
+      // Rewrite request URL to use query-based content endpoint
+      req.url = `/api/content/${type}?path=${encodeURIComponent(decoded)}`;
+    }
   }
-  const type = after.slice(0, slashIndex);
-  const encoded = after.slice(slashIndex + 1);
-  req.params.type = type;
-  req.params.encodedPath = encoded;
-  return contentPathBased(req, res);
+  next();
 });
+
+// Content routes
 app.get('/api/content/:type', getContent);
 // Legacy query-based content
 app.get('/api/shows', legacyShows);
