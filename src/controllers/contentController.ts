@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
+import * as fs from 'fs';
 import path from 'path';
 
 export const getContent = async (req: Request, res: Response) => {

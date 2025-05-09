@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
+import * as fs from 'fs';
 import path from 'path';
 import db from '../db';
 const getLibrariesStmt = db.prepare('SELECT * FROM libraries');
