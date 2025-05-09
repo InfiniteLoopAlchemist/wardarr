@@ -255,7 +255,9 @@ const viewerHtml = `
         </div>
 
         <div class="scan-status" id="scanStatus">
-            <div class="status">Checking scan status...</div>
+            <progress id="scanProgress" value="0" max="100" style="width:100%; height:14px;"></progress>
+            <div class="status"><span id="processedCount">0</span>/<span id="totalCount">0</span></div>
+            <div class="status" id="currentFile">Checking scan status...</div>
         </div>
         
         <div class="refresh-time" id="refreshTime"></div>
@@ -307,30 +309,26 @@ const viewerHtml = `
         }
         
         function updateScanStatus(data) {
-            const container = document.getElementById('scanStatus');
-            
+            // Update only the progress bar and count elements for smooth UI
             if (!data) {
-                container.innerHTML = '<div class="status">Unable to fetch scan status</div>';
+                document.getElementById('currentFile').textContent = 'Unable to fetch scan status';
                 return;
             }
-            
+            const progressBar = document.getElementById('scanProgress');
+            const procCount = document.getElementById('processedCount');
+            const totalCount = document.getElementById('totalCount');
+            const currentFileEl = document.getElementById('currentFile');
+            // Update counts
+            procCount.textContent = String(data.processedFiles);
+            totalCount.textContent = String(data.totalFiles);
+            // Update progress bar value (0-100)
+            const percent = data.totalFiles > 0 ? (data.processedFiles / data.totalFiles * 100) : 0;
+            progressBar.value = percent;
+            // Update current file or status text
             if (data.isScanning) {
-                const progress = data.totalFiles > 0 
-                    ? (data.processedFiles / data.totalFiles * 100).toFixed(1) 
-                    : 0;
-                    
-                const currentFile = data.currentFile 
-                    ? data.currentFile.split('/').pop() 
-                    : 'Unknown';
-                
-                container.innerHTML = 
-                    '<div class="status">Scanning in progress: ' + progress + '% (' + 
-                    data.processedFiles + '/' + data.totalFiles + ')</div>' +
-                    '<div class="status">Current file: ' + currentFile + '</div>';
-                
-                // Always force display of the latest match during scanning
+                const fileName = data.currentFile ? data.currentFile.split('/').pop() : 'Unknown';
+                currentFileEl.textContent = 'Scanning: ' + fileName;
                 if (data.latestMatch) {
-                    // Always force update during scanning
                     displayVerificationImage({
                         found: true,
                         verification_image_path: data.latestMatch.imagePath,
@@ -338,15 +336,12 @@ const viewerHtml = `
                         is_verified: data.latestMatch.isVerified,
                         episode_info: data.latestMatch.episodeInfo,
                         file_path: data.latestMatch.path,
-                        timestamp: Date.now() // Force timestamp to be current
+                        timestamp: Date.now()
                     }, true);
                 }
             } else {
-                container.innerHTML = '<div class="status">No scan in progress</div>';
-                
-                // Always force display of the latest match
+                currentFileEl.textContent = 'No scan in progress';
                 if (data.latestMatch) {
-                    // Always force update
                     displayVerificationImage({
                         found: true,
                         verification_image_path: data.latestMatch.imagePath,
@@ -354,7 +349,7 @@ const viewerHtml = `
                         is_verified: data.latestMatch.isVerified,
                         episode_info: data.latestMatch.episodeInfo,
                         file_path: data.latestMatch.path,
-                        timestamp: Date.now() // Force timestamp to be current
+                        timestamp: Date.now()
                     }, true);
                 }
             }
