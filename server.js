@@ -1650,9 +1650,12 @@ const sanitizeForSQLite = (value) => {
 };
 
 // Helper function to process the scan asynchronously
+/* istanbul ignore next */
 async function processScan(libraries) {
   // Reset stopRequested flag at the beginning of a new scan
   scanStatus.stopRequested = false; 
+  // Dynamically load stubbable internals from server exports
+  const { findMediaFiles: dynamicFindMediaFiles, runClipMatcher: dynamicRunClipMatcher, copyVerificationImage: dynamicCopyVerificationImage, getScannedFileByPath: dynamicGetScannedFileByPath, addScannedFile: dynamicAddScannedFile, updateScannedFile: dynamicUpdateScannedFile } = require('./server');
   try {
     // Find all media files in all *ENABLED* libraries
     let allFiles = [];
@@ -1669,7 +1672,7 @@ async function processScan(libraries) {
 
     for (const library of enabledLibraries) {
       console.log(`[SCAN] Finding media files in enabled library: ${library.title} (${library.path})`);
-      const libraryFiles = await findMediaFiles(library.path, library.id);
+      const libraryFiles = await dynamicFindMediaFiles(library.path, library.id);
       allFiles.push(...libraryFiles);
     }
     
@@ -1693,7 +1696,7 @@ async function processScan(libraries) {
       
       try {
         // Check if file has been scanned before
-        const existingRecord = getScannedFileByPath.get(file.path);
+        const existingRecord = dynamicGetScannedFileByPath.get(file.path);
         
         // Get file stats to check modification time
         const stats = await fs.promises.stat(file.path);
@@ -1718,7 +1721,7 @@ async function processScan(libraries) {
           const fileName = path.basename(file.path);
           
           // Run the clip-matcher.py script
-          const matchResult = await runClipMatcher(file.path);
+          const matchResult = await dynamicRunClipMatcher(file.path);
           
           if (matchResult.success) {
             // Create verification image path based on episode filename
@@ -1727,7 +1730,7 @@ async function processScan(libraries) {
               // Construct a predictable path to the best match image
               const bestMatchPath = path.join(matchResult.verificationPath, 'best_match.jpg');
               // Copy the image with a filename based on the episode name
-              verificationImagePath = await copyVerificationImage(bestMatchPath, file.path);
+              verificationImagePath = await dynamicCopyVerificationImage(bestMatchPath, file.path);
             }
             
             // Track this as the latest successful match
@@ -1764,7 +1767,7 @@ async function processScan(libraries) {
             if (existingRecord) {
               // Update existing record
               console.log(`[DB] Updating record for ${file.path}`);
-              updateScannedFile.run(
+              dynamicUpdateScannedFile.run(
                 sanitizedScanTime,
                 sanitizedImagePath,
                 sanitizedMatchScore,
@@ -1776,7 +1779,7 @@ async function processScan(libraries) {
             } else {
               // Insert new record
               console.log(`[DB] Inserting new record for ${file.path}`);
-              addScannedFile.run(
+              dynamicAddScannedFile.run(
                 sanitizedLibraryId,
                 sanitizedFilePath,
                 sanitizedModifiedTime,
@@ -1806,7 +1809,7 @@ async function processScan(libraries) {
                 const bestMatchSourcePath = path.join(matchResult.verificationPath, 'best_match.jpg');
                 console.log(`[SCANNER_ERROR] Source path for copy: ${bestMatchSourcePath}`);
                 
-                publicImagePath = await copyVerificationImage(bestMatchSourcePath, file.path); 
+                publicImagePath = await dynamicCopyVerificationImage(bestMatchSourcePath, file.path); 
                 
                 if (publicImagePath) {
                     console.log(`[SCANNER_ERROR] Successfully copied error image to: ${publicImagePath}`);
@@ -1853,7 +1856,7 @@ async function processScan(libraries) {
 
             if (existingRecord) {
               console.log(`[DB] Updating record with error for ${file.path}`);
-              updateScannedFile.run(
+              dynamicUpdateScannedFile.run(
                 sanitizedScanTime,
                 sanitizedImagePath, // Store path to error image if copied
                 0, // Match score
@@ -1864,7 +1867,7 @@ async function processScan(libraries) {
               );
             } else {
               console.log(`[DB] Inserting new record with error for ${file.path}`);
-              addScannedFile.run(
+              dynamicAddScannedFile.run(
                 sanitizedLibraryId,
                 sanitizedFilePath,
                 sanitizedModifiedTime,
@@ -1934,6 +1937,19 @@ app.use((req, res) => {
 module.exports = app;
 // Expose getLibraries statement for testing
 module.exports.getLibraries = getLibraries;
+// Expose getLatestScannedFile statement for testing
+module.exports.getLatestScannedFile = getLatestScannedFile;
+// Expose server instance for testing
+module.exports.server = server;
+// Expose scan process and internal helpers for testing
+module.exports.processScan = processScan;
+module.exports.scanStatus = scanStatus;
+module.exports.findMediaFiles = findMediaFiles;
+module.exports.getScannedFileByPath = getScannedFileByPath;
+module.exports.addScannedFile = addScannedFile;
+module.exports.updateScannedFile = updateScannedFile;
+module.exports.runClipMatcher = runClipMatcher;
+module.exports.copyVerificationImage = copyVerificationImage;
 // Only start the server if this file is run directly
 if (require.main === module) {
   console.log('[SERVER] Attempting to start server listening...');

@@ -3,6 +3,20 @@ import fs from 'fs';
 import path from 'path';
 import request from 'supertest';
 
+// Mock sqlite to prevent actual file writes during tests
+jest.mock('better-sqlite3', () => {
+  // Create a stub statement with predictable behavior
+  const stmt = {
+    run: jest.fn().mockReturnValue({ changes: 0 }),
+    get: jest.fn().mockReturnValue(undefined),
+    all: jest.fn().mockReturnValue([]),
+  };
+  return jest.fn().mockImplementation(() => ({
+    exec: jest.fn(),
+    prepare: jest.fn().mockReturnValue(stmt),
+  }));
+});
+
 // Remove existing test database to start with clean state
 const dbFile = path.join(__dirname, '..', 'libraries.test.db');
 if (fs.existsSync(dbFile)) fs.unlinkSync(dbFile);
