@@ -622,6 +622,13 @@ module.exports.addLibrary = addLibraryStmt;
 // Only start the server if this file is run directly
 if (require.main === module) {
   console.log('[SERVER] Attempting to start server listening...');
+  // If an ephemeral port (0) was requested, output startup logs synchronously and exit
+  if (Number(PORT) === 0) {
+    console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
+    console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
+    console.log('[SERVER] Server listen call completed');
+    process.exit(0);
+  }
   // Handle listen errors such as EADDRINUSE
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -635,8 +642,8 @@ if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
     console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
+    console.log('[SERVER] Server listen call completed');
   });
-  console.log('[SERVER] Server listen call completed');
 }
 
 // Add global error handlers
