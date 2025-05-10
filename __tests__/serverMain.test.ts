@@ -11,7 +11,11 @@ describe('Server CLI startup', () => {
       encoding: 'utf8',
       timeout: 3000,
     });
+    console.log('Spawn result:', result);
     const out = result.stdout || '';
+    const err = result.stderr || '';
+    console.log('stdout:', out);
+    console.log('stderr:', err);
     // The server startup block should run when server.js is the main module
     expect(out).toMatch(/\[SERVER\] Attempting to start server listening\.\.\./);
     expect(out).toMatch(/\[SERVER\] Node\.js backend running on http:\/\/localhost:0/);
