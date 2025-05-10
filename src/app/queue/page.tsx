@@ -30,8 +30,8 @@ export default function QueuePage() {
       }
       const data = await response.json();
       
-      // Sort by scan time (newest first)
-      const sortedData = [...data].sort((a, b) => b.last_scanned_time - a.last_scanned_time);
+      // Sort by scan time (oldest first so first done stays on top)
+      const sortedData = [...data].sort((a, b) => a.last_scanned_time - b.last_scanned_time);
       setScannedFiles(sortedData);
       setError(null);
     } catch (error) {
@@ -113,18 +113,11 @@ export default function QueuePage() {
           {filteredFiles.map(file => (
             <div key={file.id} className="bg-gray-800 rounded-lg overflow-hidden shadow-lg">
               {file.verification_image_path ? (
-                <div className="relative">
-                  <img 
-                    src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${file.verification_image_path}?t=${file.last_scanned_time}`} 
-                    alt="Verification" 
-                    className="w-full h-auto"
-                  />
-                  <div 
-                    className={`absolute top-2 right-2 w-4 h-4 rounded-full ${
-                      file.is_verified ? 'bg-green-500' : 'bg-red-500'
-                    }`}
-                  ></div>
-                </div>
+                <img 
+                  src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${file.verification_image_path}?t=${file.last_scanned_time}`} 
+                  alt="Verification" 
+                  className="w-full h-auto"
+                />
               ) : (
                 <div className="h-48 bg-gray-900 flex items-center justify-center">
                   <p className="text-gray-500">No image available</p>
@@ -132,26 +125,27 @@ export default function QueuePage() {
               )}
               
               <div className="p-4">
-                <div className="flex items-center mb-2">
-                  <div className={`w-3 h-3 rounded-full mr-2 ${file.is_verified ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <span className="font-medium">
-                    {file.is_verified ? 'Verified' : 'Not Verified'} 
-                    {file.match_score && ` (${file.match_score.toFixed(2)})`}
-                  </span>
-                </div>
-                
                 <div className="text-sm text-gray-400 truncate mb-1" title={file.file_path}>
                   {file.file_path.split('/').pop()}
                 </div>
                 
-                {file.episode_info && file.episode_info !== 'Processing Error' && (
-                  <div className="text-sm text-gray-400 mb-1">
-                    {file.episode_info}
-                  </div>
-                )}
-                
                 <div className="text-xs text-gray-500">
                   {new Date(file.last_scanned_time).toLocaleString()}
+                </div>
+                <div className="flex justify-between space-x-2 mt-2">
+                  <button type="button" className="flex items-center space-x-1 text-red-500 hover:text-red-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                      <line x1="4.22" y1="4.22" x2="19.78" y2="19.78" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                    </svg>
+                    <span className="text-base uppercase">Blocklist</span>
+                  </button>
+                  <button type="button" className="flex items-center space-x-1 text-green-500 hover:text-green-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-base uppercase">Verify</span>
+                  </button>
                 </div>
               </div>
             </div>
