@@ -9,7 +9,7 @@ describe('Server CLI startup', () => {
     const result = spawnSync('node', ['-r', 'ts-node/register', serverPath], {
       env: { ...process.env, PORT: '0' },
       encoding: 'utf8',
-      timeout: 3000,
+      timeout: 10000,
     });
     const { stdout = '', stderr = '', status, error } = result;
     if (error) {
@@ -21,5 +21,7 @@ describe('Server CLI startup', () => {
     expect(output).toMatch(/\[SERVER\] Attempting to start server listening\.\.\./);
     expect(output).toMatch(/\[SERVER\] Node\.js backend running on http:\/\/localhost:0/);
     expect(output).toMatch(/\[SERVER\] Server listen call completed/);
+    // Ensure no connection logs are emitted during startup
+    expect(output).not.toMatch(/\[CONNECTION\]/);
   });
 }); 

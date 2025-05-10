@@ -190,20 +190,17 @@ describe('HTTP server connection logging', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it('logs new connections and socket events', () => {
+  it('does not log connection events', () => {
     const fakeSocket = new EventEmitter() as any;
-    // Provide a dummy destroy method to satisfy net.Socket interface
     fakeSocket.destroy = () => {};
     fakeSocket.remoteAddress = '1.2.3.4';
     fakeSocket.remotePort = 9999;
     httpServer.emit('connection', fakeSocket);
-    expect(consoleLogSpy).toHaveBeenCalledWith('[CONNECTION] New connection from 1.2.3.4:9999');
     fakeSocket.emit('close', false);
-    expect(consoleLogSpy).toHaveBeenCalledWith('[CONNECTION] Closed connection from 1.2.3.4:9999 cleanly');
     fakeSocket.emit('close', true);
-    expect(consoleLogSpy).toHaveBeenCalledWith('[CONNECTION] Closed connection from 1.2.3.4:9999 with error');
     fakeSocket.emit('error', new Error('socket error'));
-    expect(consoleErrorSpy).toHaveBeenCalledWith('[CONNECTION ERROR] 1.2.3.4:9999 - socket error');
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 });
 
