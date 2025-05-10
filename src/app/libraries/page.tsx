@@ -9,6 +9,8 @@ interface Library {
   path: string;
   type: 'movie' | 'tv';
   is_enabled: number; // Changed to number (0 or 1)
+  sonarr_api_key?: string | null;
+  radarr_api_key?: string | null;
 }
 
 export default function LibrariesPage() {
@@ -114,6 +116,8 @@ export default function LibrariesPage() {
     const [currentTitle, setCurrentTitle] = useState(editingLibrary.title);
     const [currentPath, setCurrentPath] = useState(editingLibrary.path);
     const [currentType, setCurrentType] = useState(editingLibrary.type);
+    const [currentSonarrApiKey, setCurrentSonarrApiKey] = useState(editingLibrary.sonarr_api_key || '');
+    const [currentRadarrApiKey, setCurrentRadarrApiKey] = useState(editingLibrary.radarr_api_key || '');
     const [isSaving, setIsSaving] = useState(false);
     const [modalError, setModalError] = useState<string | null>(null);
 
@@ -127,6 +131,8 @@ export default function LibrariesPage() {
             if (currentTitle !== editingLibrary.title) updates.title = currentTitle;
             if (currentPath !== editingLibrary.path) updates.path = currentPath;
             if (currentType !== editingLibrary.type) updates.type = currentType;
+            if (currentType === 'tv' && currentSonarrApiKey !== editingLibrary.sonarr_api_key) updates.sonarr_api_key = currentSonarrApiKey;
+            if (currentType === 'movie' && currentRadarrApiKey !== editingLibrary.radarr_api_key) updates.radarr_api_key = currentRadarrApiKey;
 
             if (Object.keys(updates).length === 0) {
                 handleCloseEditModal(); // No changes
@@ -193,6 +199,30 @@ export default function LibrariesPage() {
                             <option value="movie">Movie</option>
                         </select>
                     </div>
+                    {currentType === 'tv' && (
+                      <div className="mb-4">
+                        <label htmlFor="edit-sonarr-key" className="block text-sm font-medium text-gray-300 mb-1">Sonarr API Key</label>
+                        <input
+                          type="text"
+                          id="edit-sonarr-key"
+                          value={currentSonarrApiKey}
+                          onChange={(e) => setCurrentSonarrApiKey(e.target.value)}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-100"
+                        />
+                      </div>
+                    )}
+                    {currentType === 'movie' && (
+                      <div className="mb-4">
+                        <label htmlFor="edit-radarr-key" className="block text-sm font-medium text-gray-300 mb-1">Radarr API Key</label>
+                        <input
+                          type="text"
+                          id="edit-radarr-key"
+                          value={currentRadarrApiKey}
+                          onChange={(e) => setCurrentRadarrApiKey(e.target.value)}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-100"
+                        />
+                      </div>
+                    )}
                     {modalError && <p className="text-red-500 text-sm mb-3">{modalError}</p>}
                     <div className="flex justify-end space-x-3">
                         <button 

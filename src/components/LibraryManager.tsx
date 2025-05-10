@@ -23,6 +23,8 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
   const [newLibraryPath, setNewLibraryPath] = useState('');
   const [newLibraryTitle, setNewLibraryTitle] = useState('');
   const [newLibraryType, setNewLibraryType] = useState<'movie' | 'tv'>('tv');
+  const [newSonarrApiKey, setNewSonarrApiKey] = useState('');
+  const [newRadarrApiKey, setNewRadarrApiKey] = useState('');
   const [directoryItems, setDirectoryItems] = useState<DirectoryItem[]>([]);
   const [currentPath, setCurrentPath] = useState('/');
   const [isDirectoryBrowserOpen, setIsDirectoryBrowserOpen] = useState(false);
@@ -44,7 +46,9 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
         body: JSON.stringify({
           title: newLibraryTitle,
           path: newLibraryPath,
-          type: newLibraryType
+          type: newLibraryType,
+          sonarr_api_key: newSonarrApiKey,
+          radarr_api_key: newRadarrApiKey
         }),
       });
 
@@ -166,6 +170,31 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
             </button>
           </div>
         </div>
+        
+        {newLibraryType === 'tv' && (
+          <div className="mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sonarr API Key</label>
+            <input
+              type="text"
+              value={newSonarrApiKey}
+              onChange={(e) => setNewSonarrApiKey(e.target.value)}
+              placeholder="Enter Sonarr API Key"
+              className="w-full p-2 border rounded text-gray-800"
+            />
+          </div>
+        )}
+        {newLibraryType === 'movie' && (
+          <div className="mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Radarr API Key</label>
+            <input
+              type="text"
+              value={newRadarrApiKey}
+              onChange={(e) => setNewRadarrApiKey(e.target.value)}
+              placeholder="Enter Radarr API Key"
+              className="w-full p-2 border rounded text-gray-800"
+            />
+          </div>
+        )}
         
         <button
           onClick={handleAddLibrary}

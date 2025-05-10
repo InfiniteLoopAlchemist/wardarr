@@ -44,6 +44,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_scanned_files_library ON scanned_files(library_id);
 `);
 
+// Migrate: add Sonarr and Radarr API key columns if missing
+// SQLite will ignore these if columns already exist
+try {
+  db.exec('ALTER TABLE libraries ADD COLUMN sonarr_api_key TEXT');
+} catch (_) {}
+try {
+  db.exec('ALTER TABLE libraries ADD COLUMN radarr_api_key TEXT');
+} catch (_) {}
+
 // Create scanned_files table to track processed media files
 // This can remain here or be moved later if desired
 // ... existing scanned_files table creation ...
