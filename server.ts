@@ -26,7 +26,7 @@ const db = require('./src/db.ts').default;
 // __dirname and __filename are available in CommonJS
 
 const app = express();
-const PORT = Number(process.env.PORT) || 5000; // Used in server.listen at the bottom of the file
+const PORT = Number(process.env.PORT ?? '5000'); // Used in server.listen at the bottom of the file
 
 // Enhanced logging middleware
 
@@ -619,7 +619,8 @@ module.exports.sanitizeForSQLite = sanitizeForSQLite;
 // Expose addLibrary statement for testing
 module.exports.addLibrary = addLibraryStmt;
 // Only start the server if this file is run directly
-if (require.main === module) {
+// Support ts-node/register execution by checking the main filename
+if (require.main === module || require.main?.filename === __filename) {
   console.log('[SERVER] Attempting to start server listening...');
   // If an ephemeral port (0) was requested, output startup logs synchronously and exit
   if (Number(PORT) === 0) {

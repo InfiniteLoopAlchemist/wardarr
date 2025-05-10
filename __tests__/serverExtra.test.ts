@@ -129,8 +129,7 @@ describe('Additional server endpoints for full coverage', () => {
 describe('Process event handlers', () => {
   let exitSpy: jest.SpyInstance, logSpy: jest.SpyInstance, errorSpy: jest.SpyInstance;
   beforeAll(() => {
-    // @ts-ignore: override process.exit to prevent exiting during tests
-    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {});
+    exitSpy = jest.spyOn(process as any, 'exit').mockImplementation(() => {});
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     // Stub server.close to invoke callback immediately
@@ -143,34 +142,30 @@ describe('Process event handlers', () => {
   });
 
   it('handles uncaughtException', () => {
-    process.emit('uncaughtException', new Error('test error'));
+    (process as any).emit('uncaughtException', new Error('test error'));
     expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/Uncaught exception/));
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it('handles unhandledRejection', () => {
-    // @ts-ignore: allow unhandledRejection event emit
-    process.emit('unhandledRejection', 'reason');
+    (process as any).emit('unhandledRejection', 'reason');
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unhandled Rejection'), 'reason');
   });
 
   it('handles exit event', () => {
-    // @ts-ignore: allow exit event emit
-    process.emit('exit', 42);
+    (process as any).emit('exit', 42);
     expect(logSpy).toHaveBeenCalledWith('[PROCESS] Process exiting with code: 42');
   });
 
   it('handles SIGINT', () => {
-    // @ts-ignore: allow SIGINT event emit
-    process.emit('SIGINT');
+    (process as any).emit('SIGINT');
     expect(logSpy).toHaveBeenCalledWith('[PROCESS] Received SIGINT, shutting down gracefully');
     expect(logSpy).toHaveBeenCalledWith('[SERVER] Closed all connections');
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
   it('handles SIGTERM', () => {
-    // @ts-ignore: allow SIGTERM event emit
-    process.emit('SIGTERM');
+    (process as any).emit('SIGTERM');
     expect(logSpy).toHaveBeenCalledWith('[PROCESS] Received SIGTERM, shutting down gracefully');
     expect(logSpy).toHaveBeenCalledWith('[SERVER] Closed all connections');
     expect(exitSpy).toHaveBeenCalledWith(0);

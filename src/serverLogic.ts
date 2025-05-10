@@ -1,8 +1,6 @@
-// @ts-nocheck
-
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
+import fs, { Dirent } from 'fs';
+import path from 'path';
+import { spawn } from 'child_process';
 
 // Directory for public assets
 const publicDir = path.join(__dirname, '..', 'public');
@@ -10,6 +8,16 @@ const publicDir = path.join(__dirname, '..', 'public');
 // Thresholds for CLIP matcher
 const clipMatcherThreshold = 0.90;
 const clipMatcherEarlyStop = 0.96;
+
+// Type for latest successful match result
+export type LatestSuccess = {
+  path: string;
+  imagePath: string;
+  matchScore: number;
+  isVerified: boolean;
+  episodeInfo: string;
+  timestamp: number;
+};
 
 // Global scan status object
 const scanStatus = {
@@ -19,16 +27,16 @@ const scanStatus = {
   currentFile: '',
   startTime: null,
   errors: [],
-  latestMatch: null,
+  latestMatch: null as LatestSuccess | null,
   stopRequested: false
 };
 
 // Find all media files in a directory recursively
-const findMediaFiles = async (dirPath, libraryId) => {
+export const findMediaFiles = async (dirPath: string, libraryId: number): Promise<{ path: string; libraryId: number }[]> => {
   const videoExtensions = ['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv'];
   const results = [];
   try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true }) as Dirent[];
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
@@ -42,14 +50,14 @@ const findMediaFiles = async (dirPath, libraryId) => {
       }
     }
     return results;
-  } catch (err) {
-    console.error(`[ERROR] Error scanning directory ${dirPath}:`, err);
+  } catch (err: unknown) {
+    if (err instanceof Error) console.error(`[ERROR] Error scanning directory ${dirPath}:`, err);
     return results;
   }
 };
 
 // Copy verification image to public/matches
-const copyVerificationImage = async (sourcePath, episodeFilePath) => {
+export const copyVerificationImage = async (sourcePath: string | null, episodeFilePath?: string): Promise<string | null> => {
   if (!sourcePath) return null;
   try {
     console.log(`[IMAGE] Attempting to copy from source: ${sourcePath}`);
@@ -75,14 +83,14 @@ const copyVerificationImage = async (sourcePath, episodeFilePath) => {
     }
     await fs.promises.copyFile(sourcePath, destPath);
     return `/matches/${uniqueFilename}`;
-  } catch (err) {
-    console.error(`[ERROR] Failed to copy verification image:`, err);
+  } catch (err: unknown) {
+    if (err instanceof Error) console.error(`[ERROR] Failed to copy verification image:`, err);
     return null;
   }
 };
 
 // Run the external clip-matcher Python script
-async function runClipMatcher(filePath) {
+export async function runClipMatcher(filePath: string): Promise<any> {
   return new Promise((resolve) => {
     console.log(`[CLIP-MATCHER] Processing file: ${filePath}`);
     const scriptPath = path.join(__dirname, '..', 'scripts', 'clip-matcher.py');
@@ -100,8 +108,8 @@ async function runClipMatcher(filePath) {
     const proc = spawn('python3', args);
     let stdoutData = '';
     let stderrData = '';
-    let jsonOutput = null;
-    let verificationPath = null;
+    let jsonOutput: any = null;
+    let verificationPath: string | null = null;
     proc.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdoutData += text;
@@ -114,7 +122,7 @@ async function runClipMatcher(filePath) {
           try {
             jsonOutput = JSON.parse(jm);
           } catch (parseErr) {
-            console.error('[ERROR] Failed to parse JSON from clip matcher stdout:', parseErr);
+            if (parseErr instanceof Error) console.error('[ERROR] Failed to parse JSON from clip matcher stdout:', parseErr);
           }
         }
       }
@@ -159,13 +167,13 @@ async function runClipMatcher(filePath) {
       }
     });
     proc.on('error', (procErr) => {
-      resolve({ success: false, error: `Failed to start process: ${procErr.message}`, verificationPath: null });
+      resolve({ success: false, error: procErr instanceof Error ? `Failed to start process: ${procErr.message}` : 'Failed to start process', verificationPath: null });
     });
   });
 }
 
 // Sanitize values for SQLite storage
-const sanitizeForSQLite = (value) => {
+export const sanitizeForSQLite = (value: any): any => {
   if (value === undefined) return null;
   if (value === true) return 1;
   if (value === false) return 0;
@@ -175,7 +183,7 @@ const sanitizeForSQLite = (value) => {
 };
 
 // Asynchronous scan processor
-async function processScan(libraries) {
+export async function processScan(libraries: { path: string; id: number; is_enabled: number }[]): Promise<void> {
   scanStatus.stopRequested = false;
   // Pull scanning functions and DB helpers from main server export so tests can stub them
   const serverModule = require('../server');
@@ -199,7 +207,7 @@ async function processScan(libraries) {
       allFiles.push(...files);
     }
     scanStatus.totalFiles = allFiles.length;
-    let latestSuccess = null;
+    let latestSuccess: LatestSuccess | null = null;
     for (let i = 0; i < allFiles.length; i++) {
       if (scanStatus.stopRequested) break;
       const file = allFiles[i];
@@ -252,11 +260,11 @@ async function processScan(libraries) {
     scanStatus.isScanning = false;
     scanStatus.stopRequested = false;
     if (latestSuccess) scanStatus.latestMatch = latestSuccess;
-  } catch (err) {
-    console.error('[ERROR] Scan process failed:', err);
+  } catch (err: unknown) {
+    if (err instanceof Error) console.error('[ERROR] Scan process failed:', err);
     scanStatus.isScanning = false;
     scanStatus.stopRequested = false;
   }
 }
 
-module.exports = { scanStatus, findMediaFiles, copyVerificationImage, runClipMatcher, sanitizeForSQLite, processScan }; 
+export { scanStatus }; 
