@@ -15,9 +15,9 @@ jest.mock('better-sqlite3', () => {
 const app = require('../server');
 
 describe('Backend API', () => {
-  describe('GET /api/history', () => {
+  describe('GET /api/queue', () => {
     it('returns a JSON array', async () => {
-      const res = await request(app).get('/api/history');
+      const res = await request(app).get('/api/queue');
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });

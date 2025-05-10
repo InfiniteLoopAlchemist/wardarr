@@ -45,11 +45,10 @@ export function useScan(baseUrl: string = 'http://localhost:5000') {
         throw new Error((data as any).error || `HTTP ${res.status}`);
       }
       setScanStatus((data as any).status);
-      pollRef.current = setInterval(fetchStatus, 2000);
     } catch (e: any) {
       setError(`Failed to start scan: ${e.message}`);
     }
-  }, [baseUrl, fetchStatus]);
+  }, [baseUrl]);
 
   const stopScan = useCallback(async () => {
     if (!scanStatus.isScanning || isStopping) return;
@@ -68,12 +67,25 @@ export function useScan(baseUrl: string = 'http://localhost:5000') {
   }, [baseUrl, scanStatus.isScanning, isStopping]);
 
   useEffect(() => {
-    // initial fetch and polling cleanup
+    // initial fetch of scan status
     fetchStatus();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [fetchStatus]);
+
+  useEffect(() => {
+    // start polling scan status when scanning begins
+    if (scanStatus.isScanning) {
+      pollRef.current = setInterval(fetchStatus, 2000);
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [scanStatus.isScanning, fetchStatus]);
 
   return {
     scanStatus,

@@ -12,7 +12,7 @@ const { browseRoot, browseLevel } = require('./src/controllers/browseController.
 const { handleMatch } = require('./src/controllers/matchController.ts');
 const { startScan, getScanStatus, stopScan } = require('./src/controllers/scanController.ts');
 const { getLatestVerification, getLatestMatch } = require('./src/controllers/latestController.ts');
-const { getHistory, clearHistory } = require('./src/controllers/historyController.ts');
+const { getQueue, clearQueue } = require('./src/controllers/queueController.ts');
 const { testRoute, rootRoute } = require('./src/controllers/healthController.ts');
 const { getLibraries: getLibrariesHandler, createLibrary: createLibraryHandler, updateLibrary: updateLibraryHandler, deleteLibrary: deleteLibraryHandler } = require('./src/controllers/libraryController.ts');
 const { getContent, legacyShows, legacySeasons, legacyEpisodes, pathBased: contentPathBased } = require('./src/controllers/contentController.ts');
@@ -140,11 +140,24 @@ console.log('[SERVER] Added JSON parsing middleware and static file handling');
 
 // Database functions for libraries
 const getLibrariesStmt = db.prepare('SELECT * FROM libraries');
-const addLibraryStmt = db.prepare('INSERT INTO libraries (title, path, type) VALUES (?, ?, ?)');
+// Include API key columns for movie and TV libraries
+const addLibraryStmt = db.prepare(
+  'INSERT INTO libraries (title, path, type, sonarr_api_key, radarr_api_key) VALUES (?, ?, ?, ?, ?)' 
+);
 
-// Attach library and scan functions to app for controllers to use
-app.getLibraries = getLibrariesStmt;
-app.addLibrary = addLibraryStmt;
+// Wrap addLibrary to accept either (title, path, type) or with API keys
+const addLibraryWrapper = {
+  run: (...args: any[]) => {
+    // args: [title, path, type, sonarrKey?, radarrKey?]
+    if (args.length === 3) {
+      return addLibraryStmt.run(args[0], args[1], args[2], null, null);
+    }
+    return addLibraryStmt.run(
+      args[0], args[1], args[2], args[3] ?? null, args[4] ?? null
+    );
+  }
+};
+app.addLibrary = addLibraryWrapper;
 
 // Database functions for scanned files
 const getScannedFiles = db.prepare('SELECT * FROM scanned_files');
@@ -235,13 +248,13 @@ console.log('[ROUTE] Registered hierarchical browsing route: GET /api/browse/:le
 app.post('/api/match', handleMatch);
 console.log('[ROUTE] Registered route: POST /api/match');
 
-// GET /api/history - Get scan history
-app.get('/api/history', getHistory);
-console.log('[ROUTE] Registered route: GET /api/history');
+// GET /api/queue - Get scan queue
+app.get('/api/queue', getQueue);
+console.log('[ROUTE] Registered route: GET /api/queue');
 
-// DELETE /api/history - Clear all scan history
-app.delete('/api/history', clearHistory);
-console.log('[ROUTE] Registered route: DELETE /api/history');
+// DELETE /api/queue - Clear all scan queue
+app.delete('/api/queue', clearQueue);
+console.log('[ROUTE] Registered route: DELETE /api/queue');
 
 // POST /api/scan - Start a scan of all libraries
 app.post('/api/scan', startScan);
@@ -303,9 +316,9 @@ module.exports.copyVerificationImage = copyVerificationImage;
 // Expose sanitizeForSQLite for testing
 module.exports.sanitizeForSQLite = sanitizeForSQLite;
 // Expose addLibrary statement for testing
-module.exports.addLibrary = addLibraryStmt;
+module.exports.addLibrary = app.addLibrary;
 // Only start the server if this file is run directly (support ts-node execution)
-if (process.argv.includes(__filename)) {
+if (require.main === module) {
   console.log('[SERVER] Attempting to start server listening...');
   // If an ephemeral port (0) was requested, output startup logs synchronously and exit
   if (Number(PORT) === 0) {

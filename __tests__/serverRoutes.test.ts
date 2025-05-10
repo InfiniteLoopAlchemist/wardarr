@@ -141,14 +141,14 @@ describe('Server integration tests', () => {
     });
   });
 
-  describe('/api/history and /api/latest-match', () => {
-    it('GET /api/history returns array', async () => {
-      const res = await request(app).get('/api/history');
+  describe('/api/queue and /api/latest-match', () => {
+    it('GET /api/queue returns array', async () => {
+      const res = await request(app).get('/api/queue');
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });
-    it('DELETE /api/history clears records', async () => {
-      const res = await request(app).delete('/api/history');
+    it('DELETE /api/queue clears records', async () => {
+      const res = await request(app).delete('/api/queue');
       expect(res.status).toBe(200);
     });
     it('GET /api/latest-match default found=false and no-cache header', async () => {

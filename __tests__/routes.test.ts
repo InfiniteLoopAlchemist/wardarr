@@ -43,8 +43,8 @@ describe('Core API Routes', () => {
     expect(res.body).toHaveLength(0);
   });
 
-  test('GET /api/history returns empty array', async () => {
-    const res = await request(app).get('/api/history');
+  test('GET /api/queue returns empty array', async () => {
+    const res = await request(app).get('/api/queue');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body).toHaveLength(0);
@@ -76,8 +76,8 @@ describe('Core API Routes', () => {
     expect(typeof res.body.isScanning).toBe('boolean');
   });
 
-  test('DELETE /api/history clears history (idempotent)', async () => {
-    const res = await request(app).delete('/api/history');
+  test('DELETE /api/queue clears history (idempotent)', async () => {
+    const res = await request(app).delete('/api/queue');
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
   });

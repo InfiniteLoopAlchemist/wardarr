@@ -6,27 +6,27 @@ const app = serverModule;
 const addScannedFile = serverModule.addScannedFile;
 const addLibrary = serverModule.addLibrary;
 
-describe('History API', () => {
+describe('Queue API', () => {
   beforeEach(async () => {
     // Clear any existing history and reset scanStatus
-    await request(app).delete('/api/history');
+    await request(app).delete('/api/queue');
     serverModule.scanStatus.latestMatch = null;
   });
 
-  it('GET /api/history returns empty array initially', async () => {
-    const res = await request(app).get('/api/history');
+  it('GET /api/queue returns empty array initially', async () => {
+    const res = await request(app).get('/api/queue');
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
 
-  it('GET /api/history returns inserted records', async () => {
+  it('GET /api/queue returns inserted records', async () => {
     // Insert sample libraries and records directly into the database
     const lib1 = addLibrary.run('Lib1', '/video1.mp4', 'tv').lastInsertRowid;
     const lib2 = addLibrary.run('Lib2', '/video2.mp4', 'tv').lastInsertRowid;
     addScannedFile.run(lib1, '/video1.mp4', 1234, 5678, '/matches/1.jpg', 0.5, 1, 'ep1');
     addScannedFile.run(lib2, '/video2.mp4', 2345, 6789, '/matches/2.jpg', 0.75, 0, 'ep2');
 
-    const res = await request(app).get('/api/history');
+    const res = await request(app).get('/api/queue');
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
     expect(res.body[0]).toMatchObject({
@@ -45,7 +45,7 @@ describe('History API', () => {
     });
   });
 
-  it('DELETE /api/history clears records and scanStatus.latestMatch', async () => {
+  it('DELETE /api/queue clears records and scanStatus.latestMatch', async () => {
     // Insert a library, a record, and set latestMatch
     const lib3 = addLibrary.run('Lib3', '/video3.mp4', 'tv').lastInsertRowid;
     addScannedFile.run(lib3, '/video3.mp4', 3456, 7890, '/matches/3.jpg', 1, 1, 'ep3');
@@ -58,11 +58,11 @@ describe('History API', () => {
       timestamp: Date.now()
     };
 
-    const resDel = await request(app).delete('/api/history');
+    const resDel = await request(app).delete('/api/queue');
     expect(resDel.status).toBe(200);
-    expect(resDel.body).toHaveProperty('message', 'Scan history cleared successfully!');
+    expect(resDel.body).toHaveProperty('message', 'Scan queue cleared successfully!');
 
-    const resGet = await request(app).get('/api/history');
+    const resGet = await request(app).get('/api/queue');
     expect(resGet.status).toBe(200);
     expect(resGet.body).toEqual([]);
     expect(serverModule.scanStatus.latestMatch).toBeNull();

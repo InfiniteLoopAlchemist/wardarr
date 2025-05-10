@@ -21,7 +21,7 @@ beforeAll(() => {
 describe('Latest Verification Endpoint', () => {
   beforeEach(async () => {
     // Clear scanned_files and reset status via API
-    await request(app).delete('/api/history');
+    await request(app).delete('/api/queue');
   });
 
   it('returns found=false when no records', async () => {
@@ -55,7 +55,7 @@ describe('Latest Verification Endpoint', () => {
 describe('Latest Match Endpoint', () => {
   beforeEach(async () => {
     // Clear scanned_files via API
-    await request(app).delete('/api/history');
+    await request(app).delete('/api/queue');
   });
 
   it('returns found=false when no records', async () => {

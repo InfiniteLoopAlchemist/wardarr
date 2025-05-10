@@ -18,7 +18,7 @@ export default function SettingsPage() {
     setMessageType(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/history', {
+      const response = await fetch('http://localhost:5000/api/queue', {
         method: 'DELETE',
       });
 
@@ -28,7 +28,7 @@ export default function SettingsPage() {
         throw new Error(responseData.error || `HTTP error! status: ${response.status}`);
       }
 
-      setMessage(responseData.message || 'Scan history cleared successfully!');
+      setMessage(responseData.message || 'Scan queue cleared successfully!');
       setMessageType('success');
 
     } catch (error) {
@@ -45,9 +45,9 @@ export default function SettingsPage() {
       <h1 className="text-3xl font-bold mb-8">Settings</h1>
 
       <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
-        <h2 className="text-xl font-semibold mb-4">Scan History Management</h2>
+        <h2 className="text-xl font-semibold mb-4">Scan Queue Management</h2>
         <p className="text-gray-400 mb-4">
-          Resetting the scan history will remove all records of previously scanned files. 
+          Resetting the scan queue will remove all records of previously scanned files. 
           The system will then treat all media files as new during the next scan, processing each one.
         </p>
         <button
@@ -59,7 +59,7 @@ export default function SettingsPage() {
               : 'bg-red-600 hover:bg-red-700'
           }`}
         >
-          {isLoading ? 'Resetting...' : 'Reset Scan History'}
+          {isLoading ? 'Resetting...' : 'Reset Scan Queue'}
         </button>
 
         {message && (

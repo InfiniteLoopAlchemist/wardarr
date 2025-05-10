@@ -14,7 +14,7 @@ interface ScannedFile {
   episode_info: string;
 }
 
-export default function HistoryPage() {
+export default function QueuePage() {
   const [scannedFiles, setScannedFiles] = useState<ScannedFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -24,7 +24,7 @@ export default function HistoryPage() {
     try {
       // Don't set loading to true on interval fetches, only initial
       // setLoading(true); 
-      const response = await fetch('http://localhost:5000/api/history');
+      const response = await fetch('http://localhost:5000/api/queue');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -35,8 +35,8 @@ export default function HistoryPage() {
       setScannedFiles(sortedData);
       setError(null);
     } catch (error) {
-      console.error('Error fetching scan history:', error);
-      setError('Failed to fetch scan history. Please check if the backend server is running.');
+      console.error('Error fetching scan queue:', error);
+      setError('Failed to fetch scan queue. Please check if the backend server is running.');
     } finally {
       // Ensure loading is set to false after the first fetch
       setLoading(false); 
@@ -66,7 +66,7 @@ export default function HistoryPage() {
   return (
     <div className="min-h-screen">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Scan History</h1>
+        <h1 className="text-3xl font-bold">Scan Queue</h1>
         
         <div className="flex space-x-2">
           <button 
@@ -104,8 +104,8 @@ export default function HistoryPage() {
         <div className="bg-gray-800 p-8 rounded-lg text-center">
           <p className="text-gray-400">
             {filter === 'all' 
-              ? 'No scan history found. Run a scan to generate verification images.' 
-              : `No ${filter} files found in scan history.`}
+              ? 'No scan queue found. Run a scan to generate verification images.' 
+              : `No ${filter} files found in scan queue.`}
           </p>
         </div>
       ) : (

@@ -2,7 +2,7 @@
 import React from 'react';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import HistoryPage from '../page'; // Adjust path if your page.tsx is elsewhere
+import QueuePage from '../page'; // Adjust path if your page.tsx is elsewhere
 
 // Mock global fetch
 const mockFetch = jest.fn();
@@ -38,14 +38,14 @@ describe('History Page Image Display', () => {
       json: async () => files,
     });
     mockFetch.mockImplementation(async (url) => {
-      if (url === 'http://localhost:5000/api/history') {
+      if (url === 'http://localhost:5000/api/queue') {
         return historyPromise;
       }
       return { ok: true, json: async () => [] };
     });
 
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
       await historyPromise;
     });
 
@@ -65,14 +65,14 @@ describe('History Page Image Display', () => {
       json: async () => files,
     });
     mockFetch.mockImplementation(async (url) => {
-      if (url === 'http://localhost:5000/api/history') {
+      if (url === 'http://localhost:5000/api/queue') {
         return historyPromise;
       }
       return { ok: true, json: async () => [] };
     });
 
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
       await historyPromise;
     });
 
@@ -97,18 +97,18 @@ describe('History Page - loading and error states', () => {
   test('shows loading spinner initially', () => {
     // Make fetch never resolve to keep loading state
     mockFetch.mockImplementation(() => new Promise(() => {}));
-    render(<HistoryPage />);
+    render(<QueuePage />);
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
   test('displays error message on fetch failure', async () => {
     mockFetch.mockRejectedValue(new Error('Network error'));
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     expect(
       await screen.findByText(
-        'Failed to fetch scan history. Please check if the backend server is running.'
+        'Failed to fetch scan queue. Please check if the backend server is running.'
       )
     ).toBeInTheDocument();
   });
@@ -116,11 +116,11 @@ describe('History Page - loading and error states', () => {
   test('displays error message on HTTP error response', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 500, json: async () => [] });
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     expect(
       await screen.findByText(
-        'Failed to fetch scan history. Please check if the backend server is running.'
+        'Failed to fetch scan queue. Please check if the backend server is running.'
       )
     ).toBeInTheDocument();
   });
@@ -136,32 +136,32 @@ describe('History Page - empty and filter states', () => {
 
   test('shows empty state message for all filter', async () => {
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     expect(
       await screen.findByText(
-        'No scan history found. Run a scan to generate verification images.'
+        'No scan queue found. Run a scan to generate verification images.'
       )
     ).toBeInTheDocument();
   });
 
   test('shows empty state for verified filter', async () => {
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     fireEvent.click(screen.getByText('Verified'));
     expect(
-      await screen.findByText('No verified files found in scan history.')
+      await screen.findByText('No verified files found in scan queue.')
     ).toBeInTheDocument();
   });
 
   test('shows empty state for unverified filter', async () => {
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     fireEvent.click(screen.getByText('Unverified'));
     expect(
-      await screen.findByText('No unverified files found in scan history.')
+      await screen.findByText('No unverified files found in scan queue.')
     ).toBeInTheDocument();
   });
 });
@@ -179,7 +179,7 @@ describe('History Page - data branches', () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => [fileNoImage] });
     jest.spyOn(Date.prototype, 'toLocaleString').mockReturnValue('TestTime');
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     expect(screen.queryByAltText('Verification')).toBeNull();
     expect(screen.getByText('No image available')).toBeInTheDocument();
@@ -195,7 +195,7 @@ describe('History Page - data branches', () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => [file] });
     jest.spyOn(Date.prototype, 'toLocaleString').mockReturnValue('AnotherTime');
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     expect(screen.getByText('Verified (0.95)')).toBeInTheDocument();
     expect(screen.getByText('Test Episode 2')).toBeInTheDocument();
@@ -206,7 +206,7 @@ describe('History Page - data branches', () => {
   test('filter buttons have correct active style', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => [] });
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     const allBtn = screen.getByText('All');
     const verifiedBtn = screen.getByText('Verified');
@@ -227,7 +227,7 @@ describe('History Page - data branches', () => {
     const unverifiedFile = mockScannedFile(2, '/img2.jpg', false);
     mockFetch.mockResolvedValue({ ok: true, json: async () => [verifiedFile, unverifiedFile] });
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
     });
     // Initially both displayed
     const initialImages = await screen.findAllByAltText('Verification');
@@ -268,13 +268,13 @@ describe('History Page - fallback filter branch', () => {
     ];
     const historyPromise = Promise.resolve({ ok: true, json: async () => files });
     mockFetch.mockImplementation(async url => {
-      if (url === 'http://localhost:5000/api/history') return historyPromise;
+      if (url === 'http://localhost:5000/api/queue') return historyPromise;
       return { ok: true, json: async () => [] };
     });
 
     // Render and wait for fetch
     await act(async () => {
-      render(<HistoryPage />);
+      render(<QueuePage />);
       await historyPromise;
     });
 
