@@ -25,6 +25,8 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
   const [newLibraryType, setNewLibraryType] = useState<'movie' | 'tv'>('tv');
   const [newSonarrApiKey, setNewSonarrApiKey] = useState('');
   const [newRadarrApiKey, setNewRadarrApiKey] = useState('');
+  const [newSonarrPort, setNewSonarrPort] = useState('');
+  const [newRadarrPort, setNewRadarrPort] = useState('');
   const [directoryItems, setDirectoryItems] = useState<DirectoryItem[]>([]);
   const [currentPath, setCurrentPath] = useState('/');
   const [isDirectoryBrowserOpen, setIsDirectoryBrowserOpen] = useState(false);
@@ -48,7 +50,9 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
           path: newLibraryPath,
           type: newLibraryType,
           sonarr_api_key: newSonarrApiKey,
-          radarr_api_key: newRadarrApiKey
+          radarr_api_key: newRadarrApiKey,
+          sonarr_port: newSonarrPort ? parseInt(newSonarrPort) : undefined,
+          radarr_port: newRadarrPort ? parseInt(newRadarrPort) : undefined
         }),
       });
 
@@ -183,6 +187,18 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
             />
           </div>
         )}
+        {newLibraryType === 'tv' && (
+          <div className="mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sonarr Port</label>
+            <input
+              type="number"
+              value={newSonarrPort}
+              onChange={(e) => setNewSonarrPort(e.target.value)}
+              placeholder="8989"
+              className="w-full p-2 border rounded text-gray-800"
+            />
+          </div>
+        )}
         {newLibraryType === 'movie' && (
           <div className="mb-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Radarr API Key</label>
@@ -191,6 +207,18 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
               value={newRadarrApiKey}
               onChange={(e) => setNewRadarrApiKey(e.target.value)}
               placeholder="Enter Radarr API Key"
+              className="w-full p-2 border rounded text-gray-800"
+            />
+          </div>
+        )}
+        {newLibraryType === 'movie' && (
+          <div className="mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Radarr Port</label>
+            <input
+              type="number"
+              value={newRadarrPort}
+              onChange={(e) => setNewRadarrPort(e.target.value)}
+              placeholder="7878"
               className="w-full p-2 border rounded text-gray-800"
             />
           </div>

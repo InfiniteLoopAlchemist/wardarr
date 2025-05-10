@@ -17,10 +17,10 @@ export const getLibraries = (req: Request, res: Response) => {
   }
 };
 
-const addLibraryStmt = db.prepare('INSERT INTO libraries (title, path, type, sonarr_api_key, radarr_api_key) VALUES (?, ?, ?, ?, ?)');
+const addLibraryStmt = db.prepare('INSERT INTO libraries (title, path, type, sonarr_api_key, radarr_api_key, sonarr_port, radarr_port) VALUES (?, ?, ?, ?, ?, ?, ?)');
 
 export const createLibrary = async (req: Request, res: Response) => {
-  const { title, path: libraryPath, type, sonarr_api_key, radarr_api_key } = req.body;
+  const { title, path: libraryPath, type, sonarr_api_key, radarr_api_key, sonarr_port, radarr_port } = req.body;
 
   if (!libraryPath) {
     return res.status(400).json({ error: 'Missing path in request body' });
@@ -41,7 +41,15 @@ export const createLibrary = async (req: Request, res: Response) => {
     // Use server export if available to allow stubbing in tests
     const serverModule = require('../../server.ts');
     const stmt = serverModule.addLibrary || addLibraryStmt;
-    const result = stmt.run(title, libraryPath, type, sonarr_api_key ?? null, radarr_api_key ?? null);
+    const result = stmt.run(
+      title,
+      libraryPath,
+      type,
+      sonarr_api_key ?? null,
+      radarr_api_key ?? null,
+      sonarr_port ?? null,
+      radarr_port ?? null
+    );
     return res.json({ message: 'Library added successfully', id: result.lastInsertRowid });
   } catch (error) {
     console.error('[ERROR] Failed to add library:', error);
@@ -55,8 +63,17 @@ export const updateLibrary = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid library ID' });
   }
 
-  const { title, path: libraryPath, type, is_enabled, sonarr_api_key, radarr_api_key } = req.body;
-  const provided = [title, libraryPath, type, is_enabled, sonarr_api_key, radarr_api_key].some(val => val !== undefined);
+  const { title, path: libraryPath, type, is_enabled, sonarr_api_key, radarr_api_key, sonarr_port, radarr_port } = req.body;
+  const provided = [
+    title,
+    libraryPath,
+    type,
+    is_enabled,
+    sonarr_api_key,
+    radarr_api_key,
+    sonarr_port,
+    radarr_port
+  ].some(val => val !== undefined);
   if (!provided) {
     return res.status(400).json({ error: 'No update fields provided (title, path, type, or is_enabled)' });
   }
@@ -108,6 +125,14 @@ export const updateLibrary = async (req: Request, res: Response) => {
   if (radarr_api_key !== undefined) {
     clauses.push('radarr_api_key = ?');
     params.push(radarr_api_key);
+  }
+  if (sonarr_port !== undefined) {
+    clauses.push('sonarr_port = ?');
+    params.push(sonarr_port);
+  }
+  if (radarr_port !== undefined) {
+    clauses.push('radarr_port = ?');
+    params.push(radarr_port);
   }
 
   if (clauses.length === 0) {

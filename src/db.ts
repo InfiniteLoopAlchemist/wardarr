@@ -53,6 +53,14 @@ try {
   db.exec('ALTER TABLE libraries ADD COLUMN radarr_api_key TEXT');
 } catch (_) {}
 
+// Migrate: add per-library Sonarr and Radarr port columns
+try {
+  db.exec('ALTER TABLE libraries ADD COLUMN sonarr_port INTEGER');
+} catch (_) {}
+try {
+  db.exec('ALTER TABLE libraries ADD COLUMN radarr_port INTEGER');
+} catch (_) {}
+
 // Create scanned_files table to track processed media files
 // This can remain here or be moved later if desired
 // ... existing scanned_files table creation ...

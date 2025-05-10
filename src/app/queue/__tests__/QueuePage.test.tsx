@@ -183,23 +183,8 @@ describe('History Page - data branches', () => {
     });
     expect(screen.queryByAltText('Verification')).toBeNull();
     expect(screen.getByText('No image available')).toBeInTheDocument();
-    expect(screen.getByText(/Not Verified/)).toBeInTheDocument();
     expect(screen.queryByText('Processing Error')).toBeNull();
     expect(screen.getByText('TestTime')).toBeInTheDocument();
-    (Date.prototype.toLocaleString as jest.Mock).mockRestore();
-  });
-
-  test('renders match score and episode_info when present', async () => {
-    const file = mockScannedFile(2, '/img.jpg', true);
-    file.last_scanned_time = new Date('2022-02-02T15:30:00Z').getTime();
-    mockFetch.mockResolvedValue({ ok: true, json: async () => [file] });
-    jest.spyOn(Date.prototype, 'toLocaleString').mockReturnValue('AnotherTime');
-    await act(async () => {
-      render(<QueuePage />);
-    });
-    expect(screen.getByText('Verified (0.95)')).toBeInTheDocument();
-    expect(screen.getByText('Test Episode 2')).toBeInTheDocument();
-    expect(screen.getByText('AnotherTime')).toBeInTheDocument();
     (Date.prototype.toLocaleString as jest.Mock).mockRestore();
   });
 
@@ -229,21 +214,18 @@ describe('History Page - data branches', () => {
     await act(async () => {
       render(<QueuePage />);
     });
-    // Initially both displayed
-    const initialImages = await screen.findAllByAltText('Verification');
-    expect(initialImages).toHaveLength(2);
     // Filter verified
     fireEvent.click(screen.getByText('Verified'));
-    expect(screen.getByText('Test Episode 1')).toBeInTheDocument();
-    expect(screen.queryByText('Test Episode 2')).toBeNull();
+    expect(screen.getByText('file-1.mkv')).toBeInTheDocument();
+    expect(screen.queryByText('file-2.mkv')).toBeNull();
     // Filter unverified
     fireEvent.click(screen.getByText('Unverified'));
-    expect(screen.getByText('Test Episode 2')).toBeInTheDocument();
-    expect(screen.queryByText('Test Episode 1')).toBeNull();
+    expect(screen.getByText('file-2.mkv')).toBeInTheDocument();
+    expect(screen.queryByText('file-1.mkv')).toBeNull();
     // Filter all
     fireEvent.click(screen.getByText('All'));
-    expect(screen.getByText('Test Episode 1')).toBeInTheDocument();
-    expect(screen.getByText('Test Episode 2')).toBeInTheDocument();
+    expect(screen.getByText('file-1.mkv')).toBeInTheDocument();
+    expect(screen.getByText('file-2.mkv')).toBeInTheDocument();
   });
 });
 

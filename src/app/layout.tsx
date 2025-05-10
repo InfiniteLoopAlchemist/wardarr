@@ -63,10 +63,32 @@ export default function RootLayout({
                   href="/queue" 
                   className="flex items-center px-4 py-3 hover:bg-gray-700 transition-colors"
                 >
-                  <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span>Queue</span>
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/series"
+                  className="flex items-center px-4 py-3 hover:bg-gray-700 transition-colors"
+                >
+                  <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  <span>Series</span>
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/movies"
+                  className="flex items-center px-4 py-3 hover:bg-gray-700 transition-colors"
+                >
+                  <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  <span>Movies</span>
                 </Link>
               </li>
               <li>

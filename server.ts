@@ -13,6 +13,9 @@ const { handleMatch } = require('./src/controllers/matchController.ts');
 const { startScan, getScanStatus, stopScan } = require('./src/controllers/scanController.ts');
 const { getLatestVerification, getLatestMatch } = require('./src/controllers/latestController.ts');
 const { getQueue, clearQueue } = require('./src/controllers/queueController.ts');
+const { getSeries } = require('./src/controllers/seriesController.ts');
+const { getMovies } = require('./src/controllers/moviesController.ts');
+const { getSeriesDetail } = require('./src/controllers/seriesDetailController.ts');
 const { testRoute, rootRoute } = require('./src/controllers/healthController.ts');
 const { getLibraries: getLibrariesHandler, createLibrary: createLibraryHandler, updateLibrary: updateLibraryHandler, deleteLibrary: deleteLibraryHandler } = require('./src/controllers/libraryController.ts');
 const { getContent, legacyShows, legacySeasons, legacyEpisodes, pathBased: contentPathBased } = require('./src/controllers/contentController.ts');
@@ -255,6 +258,16 @@ console.log('[ROUTE] Registered route: GET /api/queue');
 // DELETE /api/queue - Clear all scan queue
 app.delete('/api/queue', clearQueue);
 console.log('[ROUTE] Registered route: DELETE /api/queue');
+
+// Series and Movies endpoints
+app.get('/api/series/:id', getSeries);
+console.log('[ROUTE] Registered route: GET /api/series/:id');
+app.get('/api/movies/:id', getMovies);
+console.log('[ROUTE] Registered route: GET /api/movies/:id');
+
+// Series detail endpoint
+app.get('/api/series/:libId/:seriesId', getSeriesDetail);
+console.log('[ROUTE] Registered route: GET /api/series/:libId/:seriesId');
 
 // POST /api/scan - Start a scan of all libraries
 app.post('/api/scan', startScan);
