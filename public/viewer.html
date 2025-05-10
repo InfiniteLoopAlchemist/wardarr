@@ -1,4 +1,4 @@
-
+const viewerHtml = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -167,7 +167,7 @@
             const uniqueImagePath = data.verification_image_path + '?nocache=' + Date.now(); 
             
             let html = '<div class="image-container">';
-            html += '<img src="' + uniqueImagePath + '" alt="Verification image" onload="this.style.opacity=1" onerror="this.src='' + uniqueImagePath + ''" style="opacity:0.95">';
+            html += '<img src="' + uniqueImagePath + '" alt="Verification image" onload="this.style.opacity=1" onerror="this.src=\'' + uniqueImagePath + '\'" style="opacity:0.95">';
             html += '</div>';
             html += '<div class="metadata">';
             html += '<div class="label">Status:</div>';
@@ -303,3 +303,6 @@
     </script>
 </body>
 </html>
+`;
+
+// Write the viewer HTML file
