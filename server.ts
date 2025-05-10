@@ -1,11 +1,13 @@
-
+export {};
+// Removed ts-nocheck; this file is now a module
 
 const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-const { createServer } = require('http');
-const { spawn } = require('child_process');
+import { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { createServer, Server as HTTPServer } from 'http';
+import { spawn } from 'child_process';
 const { browseRoot, browseLevel } = require('./src/controllers/browseController.ts');
 const { handleMatch } = require('./src/controllers/matchController.ts');
 const { startScan, getScanStatus, stopScan } = require('./src/controllers/scanController.ts');
@@ -24,11 +26,11 @@ const db = require('./src/db.ts').default;
 // __dirname and __filename are available in CommonJS
 
 const app = express();
-const PORT = process.env.PORT || 5000; // Used in server.listen at the bottom of the file
+const PORT = Number(process.env.PORT) || 5000; // Used in server.listen at the bottom of the file
 
 // Enhanced logging middleware
 
-const logRequest = (req, res, next) => {
+const logRequest = (req: Request, res: Response, next: NextFunction): void => {
   const start = Date.now();
   console.log(`[REQUEST] ${new Date().toISOString()} - ${req.method} ${req.url}`);
   console.log(`[HEADERS] ${JSON.stringify(req.headers)}`);
@@ -44,7 +46,7 @@ const logRequest = (req, res, next) => {
   
   // Track response
   const originalSend = res.send;
-  res.send = function(body) {
+  res.send = function(body: any): Response<any> {
     const duration = Date.now() - start;
     console.log(`[RESPONSE] ${res.statusCode} - ${duration}ms`);
     if (typeof body === 'string' && body.length < 1000) {
@@ -57,7 +59,7 @@ const logRequest = (req, res, next) => {
   
   // Also capture JSON responses
   const originalJson = res.json;
-  res.json = function(body) {
+  res.json = function(body: any): Response<any> {
     const duration = Date.now() - start;
     console.log(`[RESPONSE JSON] ${res.statusCode} - ${duration}ms`);
     console.log(`[RESPONSE BODY] ${JSON.stringify(body)}`);
@@ -88,15 +90,20 @@ const server = createServer(app);
 
 // Add middleware to parse JSON and handle errors
 app.use(express.json({
-  verify: (req, res, buf) => {
+  verify: (req: Request, res: Response, buf: Buffer): void => {
     // Skip verification for empty bodies
     if (buf.length === 0) return;
     
     try {
-      JSON.parse(buf);
-    } catch (e) {
-      console.error(`[JSON PARSE ERROR] Invalid JSON: ${e.message}`);
-      res.status(400).send(`Invalid JSON: ${e.message}`);
+      JSON.parse(buf.toString());
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        console.error(`[JSON PARSE ERROR] Invalid JSON: ${e.message}`);
+        res.status(400).send(`Invalid JSON: ${e.message}`);
+      } else {
+        console.error('[JSON PARSE ERROR] Invalid JSON');
+        res.status(400).send('Invalid JSON');
+      }
       throw new Error('Invalid JSON');
     }
   }
@@ -431,7 +438,7 @@ fs.writeFileSync(viewerPath, viewerHtml);
 console.log(`[SERVER] Created verification image viewer at: ${viewerPath}`);
 
 // Explicitly set CORS headers for image files
-app.use('/matches', (req, res, next) => {
+app.use('/matches', (req: Request, res: Response, next: NextFunction): void => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET');
   res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -478,12 +485,16 @@ app.addScannedFile = addScannedFile;
 app.updateScannedFile = updateScannedFile;
 
 // Helper function to validate a path exists
-const validatePath = async (filePath) => {
+const validatePath = async (filePath: string): Promise<boolean> => {
   try {
     await fs.promises.access(filePath, fs.constants.R_OK);
     return true;
-  } catch (err) {
-    console.error(`[PATH VALIDATION ERROR] ${filePath} - ${err.message}`);
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      console.error(`[PATH VALIDATION ERROR] ${filePath} - ${err.message}`);
+    } else {
+      console.error('[PATH VALIDATION ERROR] Unknown error');
+    }
     return false;
   }
 };
@@ -495,7 +506,7 @@ app.put('/api/libraries/:id', updateLibraryHandler);
 app.delete('/api/libraries/:id', deleteLibraryHandler);
 
 // Path-based content redirection middleware (handles percent-encoded paths)
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   if (req.method === 'GET') {
     const rawUrl = req.originalUrl.split('?')[0];
     const prefix = '/api/path/';
@@ -504,7 +515,8 @@ app.use((req, res, next) => {
       const slashIndex = after.indexOf('/');
       if (slashIndex === -1) {
         const type = after;
-        return res.status(400).json({ error: `Missing encodedPath parameter for ${type}` });
+        res.status(400).json({ error: `Missing encodedPath parameter for ${type}` });
+        return;
       }
       const type = after.slice(0, slashIndex);
       const encoded = after.slice(slashIndex + 1);
@@ -574,13 +586,13 @@ app.get('/', rootRoute);
 console.log('[ROUTE] Registered route: GET /');
 
 // Add global error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: any, req: Request, res: Response, next: NextFunction): void => {
   console.error(`[SERVER ERROR] ${err.stack}`);
   res.status(500).send('Something broke!');
 });
 
 // Handle 404 errors for any routes not matched
-app.use((req, res) => {
+app.use((req: Request, res: Response): void => {
   console.error(`[404 ERROR] No route found for ${req.method} ${req.url}`);
   res.status(404).json({ error: `Route not found: ${req.method} ${req.url}` });
 });
@@ -617,7 +629,7 @@ if (require.main === module) {
     process.exit(0);
   }
   // Handle listen errors such as EADDRINUSE
-  server.on('error', (err) => {
+  server.on('error', (err: NodeJS.ErrnoException): void => {
     if (err.code === 'EADDRINUSE') {
       console.error(`[SERVER ERROR] Port ${PORT} is already in use`);
     } else {
@@ -626,7 +638,7 @@ if (require.main === module) {
     process.exit(1);
   });
   // Start listening on the HTTP server we created earlier
-  server.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, '0.0.0.0', (): void => {
     console.log(`[SERVER] Node.js backend running on http://localhost:${PORT}`);
     console.log(`[SERVER] Test server running. Try accessing http://localhost:${PORT}/test or http://localhost:${PORT}/api/libraries`);
     console.log('[SERVER] Server listen call completed');
@@ -634,22 +646,22 @@ if (require.main === module) {
 }
 
 // Add global error handlers
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', (err: Error): void => {
   console.error(`[FATAL ERROR] Uncaught exception: ${err.message}`);
   console.error(err.stack);
   process.exit(1); //mandatory (as per the Node.js docs)
 });
 
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', (reason: unknown): void => {
   console.error('[FATAL ERROR] Unhandled Rejection at:', reason);
 });
 
 // Log process events
-process.on('exit', (code) => {
+process.on('exit', (code: number): void => {
   console.log(`[PROCESS] Process exiting with code: ${code}`);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', (): void => {
   console.log('[PROCESS] Received SIGINT, shutting down gracefully');
   server.close(() => {
     console.log('[SERVER] Closed all connections');
@@ -657,7 +669,7 @@ process.on('SIGINT', () => {
   });
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', (): void => {
   console.log('[PROCESS] Received SIGTERM, shutting down gracefully');
   server.close(() => {
     console.log('[SERVER] Closed all connections');
