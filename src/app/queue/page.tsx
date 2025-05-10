@@ -109,7 +109,7 @@ export default function QueuePage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 [@media(min-width:2160px)]:grid-cols-2 gap-6">
           {filteredFiles.map(file => (
             <div key={file.id} className="bg-gray-800 rounded-lg overflow-hidden shadow-lg">
               {file.verification_image_path ? (
