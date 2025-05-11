@@ -17,12 +17,13 @@ import torch
 from transformers import CLIPProcessor, CLIPModel
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
+import time
 
 # Filter out the specific HuggingFace warning about resume_download
 warnings.filterwarnings("ignore", message=".*resume_download.*", category=FutureWarning)
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env (verbose override)
+load_dotenv(verbose=True, override=True)
 
 # Check for GPU availability
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
@@ -33,6 +34,13 @@ TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 if not TMDB_API_KEY:
     print("ERROR: TMDB_API_KEY not found in environment variables or .env file.")
     sys.exit(1) # Exit if key is missing
+
+# TheTVDB API key - Read from environment variable
+TVDB_API_KEY = os.getenv('TVDB_API_KEY')
+if not TVDB_API_KEY:
+    print("WARNING: TVDB_API_KEY not found; TVDB integration disabled.")
+TVDB_API_BASE_URL = 'https://api4.thetvdb.com/v4'
+TVDB_IMAGE_BASE_URL = 'https://artworks.thetvdb.com/banners/'
 
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
@@ -51,6 +59,54 @@ VERIFY_DIR = 'verification'
 
 # Frame extraction rate (1 frame per second)
 FRAME_RATE = 1
+
+# Cache TVDB v4 token for 30 days
+TOKEN_CACHE_PATH = Path(__file__).parent / '.tvdb_token.json'
+def get_tvdb_token():
+    try:
+        if TOKEN_CACHE_PATH.exists():
+            data = json.loads(TOKEN_CACHE_PATH.read_text())
+            token = data.get('token')
+            ts = data.get('timestamp')
+            if token and ts and time.time() - ts < 30 * 24 * 3600:
+                print(f"[TVDB] Using cached token {(time.time()-ts)/3600:.1f}h ago")
+                return token
+        print("[TVDB] Fetching new token")
+        res = requests.post(f"{TVDB_API_BASE_URL}/login", json={"apikey": TVDB_API_KEY})
+        res.raise_for_status()
+        tok = res.json().get('data', {}).get('token')
+        if tok:
+            TOKEN_CACHE_PATH.write_text(json.dumps({"token": tok, "timestamp": time.time()}))
+        return tok
+    except Exception as e:
+        print(f"[TVDB] Token error: {e}")
+        return None
+
+def search_tvdb_series(show_name: str):
+    """Search TheTVDB v4 for a series by name."""
+    # Normalize whitespace in show name
+    show_name = ' '.join(show_name.split())
+    token = get_tvdb_token()
+    if not token:
+        return None
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    try:
+        print(f"[TVDB] Searching for series: {show_name}")
+        # Use the /search endpoint with type=series and q param
+        res = requests.get(
+            f"{TVDB_API_BASE_URL}/search",
+            params={"type": "series", "q": show_name},
+            headers=headers
+        )
+        res.raise_for_status()
+        data = res.json().get('data', [])
+        if data:
+            sid = data[0].get('id')
+            print(f"[TVDB] Found series ID: {sid}")
+            return sid
+    except Exception as e:
+        print(f"[TVDB] Error searching series: {e}")
+    return None
 
 def search_tmdb_for_show(show_name, year=None):
     """Search TMDB for a show by name and optionally year."""
@@ -184,6 +240,34 @@ def get_episode_images(series_id, season, episode):
         traceback.print_exc()
         return None
 
+def get_tvdb_episode_images(series_id, season, episode):
+    '''Get episode images from TheTVDB v4.'''  
+    # Normalize series_id: strip 'series-' prefix if present
+    series_id_str = str(series_id)
+    if series_id_str.startswith("series-"):
+        series_id_str = series_id_str.split('-', 1)[1]
+    try:
+        token = get_tvdb_token()
+        if not token:
+            return None
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        print(f"[TVDB] Fetching episode via series default endpoint (series_id={series_id_str})")
+        res = requests.get(
+            f"{TVDB_API_BASE_URL}/series/{series_id_str}/episodes/default",
+            params={"season": season, "episodeNumber": episode},
+            headers=headers
+        )
+        res.raise_for_status()
+        ep_data = res.json().get('data', {})
+        eps = ep_data.get('episodes', [])
+        if eps and eps[0].get('image'):
+            return [{ 'file_path': eps[0]['image'] }]
+        print("[TVDB] No episode image found.")
+        return None
+    except Exception as e:
+        print(f"[TVDB] Error fetching episode stills: {e}")
+        return None
+
 def download_image(url, output_path):
     """Download an image from URL."""
     try:
@@ -274,7 +358,7 @@ def process_batch(batch, still_embedding, processor, model):
     
     return results
 
-def create_comparison_image(still_path, frame_path, output_path, similarity, episode_info=None):
+def create_comparison_image(still_path, frame_path, output_path, similarity, episode_info=None, source='TMDB'):
     """Create a side-by-side comparison image for verification."""
     try:
         # Open images
@@ -307,7 +391,7 @@ def create_comparison_image(still_path, frame_path, output_path, similarity, epi
             font = ImageFont.load_default()
             small_font = ImageFont.load_default()
         
-        draw.text((10, height + 10), f"TMDB Still", fill=(0, 0, 0), font=font)
+        draw.text((10, height + 10), f"{source} Still", fill=(0, 0, 0), font=font)
         draw.text((still_width + 20, height + 10), f"Video Frame - Similarity: {similarity:.3f}", fill=(0, 0, 0), font=font)
         
         # Add episode info if available
@@ -324,7 +408,7 @@ def create_comparison_image(still_path, frame_path, output_path, similarity, epi
         traceback.print_exc()
         return None
 
-def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD, force_still_path=None, model_name_override=None):
+def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD, force_still_path=None, model_name_override=None):
     """Main function to process a media file."""
     try:
         import time
@@ -392,30 +476,55 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
                 print(f"ERROR: Forced still file not found: {force_still_path}")
                 return False
             print(f"Using forced still: {force_still_path}")
-            # Create a synthetic still list for the loop
-            forced_stills_list = [{'file_path': force_still_path, 'source': 'forced'}]
+            forced_stills_list = [{ 'file_path': force_still_path, 'source': 'forced' }]
             stills_to_process_list = forced_stills_list
             stills_to_process = 1 # Only one still to process
         else:
-            # Get episode images from TMDB
-            episode_images = get_episode_images(file_info['tmdbId'], file_info['season'], file_info['episode'])
-            if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
-                print("No episode stills available from TMDB")
-                return False
-            stills_to_process_list = episode_images['stills']
+            # First, try TheTVDB stills (lookup by ID or search by name)
+            tvdb_images = None
+            tvdb_series_id = file_info.get('tvdbId')
+            if not tvdb_series_id:
+                tvdb_series_id = search_tvdb_series(file_info['show'])
+            if tvdb_series_id:
+                print(f"[TVDB] Fetching stills for series {tvdb_series_id}")
+                tvdb_images = get_tvdb_episode_images(
+                    tvdb_series_id, file_info['season'], file_info['episode']
+                )
+            if tvdb_images and len(tvdb_images) > 0:
+                stills_source = 'TVDB'
+                stills_to_process_list = tvdb_images
+            else:
+                print("No episode stills available from TVDB, falling back to TMDB")
+                episode_images = get_episode_images(
+                    file_info['tmdbId'], file_info['season'], file_info['episode']
+                )
+                if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
+                    print("No episode stills available from TMDB")
+                    return False
+                stills_source = 'TMDB'
+                stills_to_process_list = episode_images['stills']
             stills_to_process = min(len(stills_to_process_list), max_stills)
-            print(f"Found {len(stills_to_process_list)} stills for episode from TMDB (will process up to {stills_to_process})")
+            print(f"Found {len(stills_to_process_list)} stills for episode from {stills_source} (will process up to {stills_to_process})")
 
         for still_index, still_info in enumerate(stills_to_process_list[:stills_to_process]):
             if force_still_path:
                 still_path = still_info['file_path'] # This is already a local path
                 print(f"\nProcessing forced still #{still_index + 1} (Path: {still_path})")
             else:
-                still_url = f"{TMDB_IMAGE_BASE_URL}{still_info['file_path']}"
+                # Build the download URL based on source
+                if stills_source == 'TVDB':
+                    # TVDB returns full image URLs; use directly if so
+                    path_or_url = still_info['file_path']
+                    if path_or_url.startswith('http'):
+                        still_url = path_or_url
+                    else:
+                        still_url = f"{TVDB_IMAGE_BASE_URL}{path_or_url}"
+                else:
+                    still_url = f"{TMDB_IMAGE_BASE_URL}{still_info['file_path']}"
                 # Prepare file path for this still
                 still_path = os.path.join(TEMP_DIR, f"{safe_dirname}_still_{still_index + 1}.jpg")
                 # Download the reference still
-                print(f"\nProcessing still #{still_index + 1} of {stills_to_process} (TMDB)")
+                print(f"\nProcessing still #{still_index + 1} of {stills_to_process} (source: {stills_source}) URL: {still_url}")
                 if not download_image(still_url, still_path):
                     print(f"Failed to download still: {still_url}")
                     continue # Skip this still
@@ -485,7 +594,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
             # Create comparison image for this still
             if still_best_match:
                 comparison_path = os.path.join(verify_path, f"still_{still_index + 1}_match.jpg")
-                create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info)
+                create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info, source=stills_source)
             
             # Early stopping if we hit the early stop threshold
             if max_similarity >= early_stop_threshold:
@@ -510,7 +619,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=5,
         # Create final verification image for the best match
         if best_match_frame and best_match_still_path:
             final_comparison_path = os.path.join(verify_path, "best_match.jpg")
-            create_comparison_image(best_match_still_path, best_match_frame, final_comparison_path, max_similarity, file_info)
+            create_comparison_image(best_match_still_path, best_match_frame, final_comparison_path, max_similarity, file_info, source=stills_source)
         
         print("\nResults:")
         print("---------")
@@ -546,8 +655,8 @@ def main():
                         help=f'Similarity threshold (default: {SIMILARITY_THRESHOLD})')
     parser.add_argument('--early-stop', type=float, default=EARLY_STOP_THRESHOLD,
                         help=f'Early stopping threshold (default: {EARLY_STOP_THRESHOLD})')
-    parser.add_argument('--max-stills', type=int, default=5,
-                        help='Maximum number of stills to use from TMDB')
+    parser.add_argument('--max-stills', type=int, default=10,
+                        help='Maximum number of stills to use from TVDB/TMDB')
     parser.add_argument('--strict', action='store_true',
                         help='Strict mode - only verify if similarity exceeds threshold')
     parser.add_argument('--cpu', action='store_true',

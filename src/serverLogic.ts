@@ -112,6 +112,7 @@ export async function runClipMatcher(filePath: string): Promise<any> {
     let verificationPath: string | null = null;
     proc.stdout.on('data', (chunk) => {
       const text = chunk.toString();
+      console.log(`[CLIP-MATCHER][PY] ${text.trim()}`);
       stdoutData += text;
       // Attempt to extract verification path from accumulated stdout data
       const matchOut = stdoutData.match(/Verification images saved to:\s*(.+)/);
@@ -129,6 +130,7 @@ export async function runClipMatcher(filePath: string): Promise<any> {
     });
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString();
+      console.error(`[CLIP-MATCHER][PY-ERR] ${text.trim()}`);
       stderrData += text;
       // Attempt to extract verification path from accumulated stderr data
       const matchErr = stderrData.match(/Verification images saved to:\s*(.+)/);
