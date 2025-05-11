@@ -438,6 +438,39 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         verify_path = os.path.join(VERIFY_DIR, safe_dirname)
         os.makedirs(verify_path, exist_ok=True)
         
+        # FETCH STILL IMAGES BEFORE EXTRACTION; bail if none
+        if force_still_path:
+            if not os.path.exists(force_still_path):
+                print(f"ERROR: Forced still file not found: {force_still_path}")
+                return False
+            stills_source = 'forced'
+            stills_to_process_list = [{ 'file_path': force_still_path, 'source': 'forced' }]
+        else:
+            # First, try TheTVDB stills (lookup by ID or search by name)
+            tvdb_images = None
+            tvdb_series_id = file_info.get('tvdbId')
+            if not tvdb_series_id:
+                tvdb_series_id = search_tvdb_series(file_info['show'])
+            if tvdb_series_id:
+                print(f"[TVDB] Fetching stills for series {tvdb_series_id}")
+                tvdb_images = get_tvdb_episode_images(tvdb_series_id, file_info['season'], file_info['episode'])
+            if tvdb_images and len(tvdb_images) > 0:
+                stills_source = 'TVDB'
+                stills_to_process_list = tvdb_images
+            else:
+                print("No episode stills available from TVDB, falling back to TMDB")
+                episode_images = get_episode_images(file_info['tmdbId'], file_info['season'], file_info['episode'])
+                if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
+                    print("No episode stills available from TMDB")
+                    return False
+                stills_source = 'TMDB'
+                stills_to_process_list = episode_images['stills']
+        stills_to_process = min(len(stills_to_process_list), max_stills)
+        print(f"Found {len(stills_to_process_list)} stills for episode from {stills_source} (will process up to {stills_to_process})")
+
+        # For strict mode, track matches for each still
+        still_matches = []
+
         # Extract frames from video
         frames_dir = os.path.join(TEMP_DIR, safe_dirname + "_frames")
         frame_paths = extract_frames(media_path, frames_dir, FRAME_RATE)
@@ -468,44 +501,6 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         best_match_still = None
         best_match_still_path = None
         
-        # For strict mode, track matches for each still
-        still_matches = []
-        
-        if force_still_path:
-            if not os.path.exists(force_still_path):
-                print(f"ERROR: Forced still file not found: {force_still_path}")
-                return False
-            print(f"Using forced still: {force_still_path}")
-            forced_stills_list = [{ 'file_path': force_still_path, 'source': 'forced' }]
-            stills_to_process_list = forced_stills_list
-            stills_to_process = 1 # Only one still to process
-        else:
-            # First, try TheTVDB stills (lookup by ID or search by name)
-            tvdb_images = None
-            tvdb_series_id = file_info.get('tvdbId')
-            if not tvdb_series_id:
-                tvdb_series_id = search_tvdb_series(file_info['show'])
-            if tvdb_series_id:
-                print(f"[TVDB] Fetching stills for series {tvdb_series_id}")
-                tvdb_images = get_tvdb_episode_images(
-                    tvdb_series_id, file_info['season'], file_info['episode']
-                )
-            if tvdb_images and len(tvdb_images) > 0:
-                stills_source = 'TVDB'
-                stills_to_process_list = tvdb_images
-            else:
-                print("No episode stills available from TVDB, falling back to TMDB")
-                episode_images = get_episode_images(
-                    file_info['tmdbId'], file_info['season'], file_info['episode']
-                )
-                if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
-                    print("No episode stills available from TMDB")
-                    return False
-                stills_source = 'TMDB'
-                stills_to_process_list = episode_images['stills']
-            stills_to_process = min(len(stills_to_process_list), max_stills)
-            print(f"Found {len(stills_to_process_list)} stills for episode from {stills_source} (will process up to {stills_to_process})")
-
         for still_index, still_info in enumerate(stills_to_process_list[:stills_to_process]):
             if force_still_path:
                 still_path = still_info['file_path'] # This is already a local path
@@ -590,7 +585,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
                 "best_match": still_best_match,
                 "still_path": still_path
             })
-            
+
             # Create comparison image for this still
             if still_best_match:
                 comparison_path = os.path.join(verify_path, f"still_{still_index + 1}_match.jpg")

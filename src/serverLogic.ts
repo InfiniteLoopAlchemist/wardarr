@@ -163,7 +163,23 @@ export async function runClipMatcher(filePath: string): Promise<any> {
           resolve({ success: true, verified: true, matchScore: score, episode: path.basename(filePath), verificationPath });
         }
       } else if (code === 1) {
-        resolve({ success: false, verified: false, verificationPath, error: `Verification failed: ${errMsg || 'No specific error message.'}`, exitCode: 1 });
+        // If script exited with code 1 but produced a verificationPath (TMDB fallback or match ran), treat as success but not verified
+        if (verificationPath) {
+          // Extract best match score from stdout if available
+          let score = 0;
+          const m = stdoutData.match(/Best match:\s*([\d.]+)/);
+          if (m && m[1]) score = parseFloat(m[1]);
+          resolve({
+            success: true,
+            verified: false,
+            matchScore: score,
+            episode: path.basename(filePath),
+            verificationPath
+          });
+        } else {
+          // No stills found, treat as true failure
+          resolve({ success: false, verified: false, verificationPath: null, error: `Verification failed: ${errMsg || 'No specific error message.'}`, exitCode: 1 });
+        }
       } else {
         resolve({ success: false, error: `Process exited with code ${code}: ${errMsg || 'No specific error message.'}`, exitCode: code, verificationPath });
       }
