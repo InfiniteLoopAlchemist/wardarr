@@ -18,6 +18,7 @@ from transformers import CLIPProcessor, CLIPModel
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 import time
+import sqlite3
 
 # Filter out the specific HuggingFace warning about resume_download
 warnings.filterwarnings("ignore", message=".*resume_download.*", category=FutureWarning)
@@ -60,14 +61,21 @@ VERIFY_DIR = 'verification'
 # Frame extraction rate (1 frame per second)
 FRAME_RATE = 1
 
-# Cache TVDB v4 token for 30 days
-TOKEN_CACHE_PATH = Path(__file__).parent / '.tvdb_token.json'
+# Initialize SQLite DB connection for TVDB token caching
+DB_PATH = Path(__file__).parent.parent / 'libraries.db'
+_conn = sqlite3.connect(str(DB_PATH))
+wardarr = _conn.cursor()
+wardarr.execute('CREATE TABLE IF NOT EXISTS tvdb_token_cache (token TEXT, timestamp REAL)')
+_conn.commit()
+
 def get_tvdb_token():
+    """Fetch or retrieve cached TVDB v4 API JWT token."""
     try:
-        if TOKEN_CACHE_PATH.exists():
-            data = json.loads(TOKEN_CACHE_PATH.read_text())
-            token = data.get('token')
-            ts = data.get('timestamp')
+        # Attempt to read cached token from DB
+        wardarr.execute('SELECT token, timestamp FROM tvdb_token_cache LIMIT 1')
+        row = wardarr.fetchone()
+        if row:
+            token, ts = row
             if token and ts and time.time() - ts < 30 * 24 * 3600:
                 print(f"[TVDB] Using cached token {(time.time()-ts)/3600:.1f}h ago")
                 return token
@@ -76,7 +84,13 @@ def get_tvdb_token():
         res.raise_for_status()
         tok = res.json().get('data', {}).get('token')
         if tok:
-            TOKEN_CACHE_PATH.write_text(json.dumps({"token": tok, "timestamp": time.time()}))
+            # Store new token in DB
+            wardarr.execute('DELETE FROM tvdb_token_cache')
+            wardarr.execute(
+                'INSERT INTO tvdb_token_cache (token, timestamp) VALUES (?, ?)',
+                (tok, time.time())
+            )
+            _conn.commit()
         return tok
     except Exception as e:
         print(f"[TVDB] Token error: {e}")
