@@ -21,10 +21,23 @@ export const getSeriesDetail = async (req: Request, res: Response) => {
     const baseUrl = lib.sonarr_port
       ? `http://localhost:${lib.sonarr_port}`
       : process.env.SONARR_URL || 'http://localhost:8989';
-    const response = await axios.get(`${baseUrl}/api/v3/series/${seriesId}`, {
-      headers: { 'X-Api-Key': lib.sonarr_api_key }
-    });
-    return res.json(response.data);
+    // First fetch series metadata
+    const seriesRes = await axios.get(
+      `${baseUrl}/api/v3/series/${seriesId}`,
+      { headers: { 'X-Api-Key': lib.sonarr_api_key } }
+    );
+    const seriesData: any = seriesRes.data;
+    // Then fetch all episodes for this series
+    const episodesRes = await axios.get(
+      `${baseUrl}/api/v3/episode`,
+      {
+        params: { seriesId },
+        headers: { 'X-Api-Key': lib.sonarr_api_key }
+      }
+    );
+    // Attach episodes directly on the series object
+    seriesData.episodes = episodesRes.data;
+    return res.json(seriesData);
   } catch (error: any) {
     console.error('[ERROR] getSeriesDetail failed:', error);
     const msg = error.response?.data?.error || error.message || 'Error fetching series detail';

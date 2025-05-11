@@ -225,6 +225,8 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
       const decoded = decodeURIComponent(encoded);
       // Rewrite request URL to use query-based content endpoint
       req.url = `/api/content/${type}?path=${encodeURIComponent(decoded)}`;
+      // Ensure the decoded path is also set in req.query
+      req.query.path = decoded;
     }
   }
   next();
@@ -238,6 +240,10 @@ app.get('/api/seasons', legacySeasons);
 app.get('/api/episodes', legacyEpisodes);
 
 console.log('[ROUTE] Registered backward-compatible routes: GET /api/shows, GET /api/seasons, GET /api/episodes');
+
+// Path-based content endpoint for aliasing encoded paths
+app.get('/api/path/:type/:encodedPath', contentPathBased);
+console.log('[ROUTE] Registered route: GET /api/path/:type/:encodedPath');
 
 // Browse routes
 app.get('/api/browse', browseRoot);

@@ -4,10 +4,13 @@ import '@testing-library/jest-dom';
 import Dashboard from '../page';
 
 // Mock next/image
-jest.mock('next/image', () => ({
-  __esModule: true,
-  default: (props: any) => <img {...props} />,
-}));
+jest.mock('next/image', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    default: (props: any) => React.createElement('img', props),
+  };
+});
 
 let fetchMock: jest.Mock;
 

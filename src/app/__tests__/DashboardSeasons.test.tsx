@@ -3,11 +3,14 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Dashboard from '../page';
 
-// Mock next/image to avoid Next.js image component
-jest.mock('next/image', () => ({
-  __esModule: true,
-  default: (props: any) => <img {...props} />,
-}));
+// Mock next/image
+jest.mock('next/image', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    default: (props: any) => React.createElement('img', props),
+  };
+});
 
 // Mock useScan hook
 jest.mock('@/hooks/useScan', () => ({
