@@ -43,14 +43,20 @@ if not TVDB_API_KEY:
 TVDB_API_BASE_URL = 'https://api4.thetvdb.com/v4'
 TVDB_IMAGE_BASE_URL = 'https://artworks.thetvdb.com/banners/'
 
+# OMDb API key - Read from environment variable
+OMDB_API_KEY = os.getenv('OMDB_API_KEY')
+if not OMDB_API_KEY:
+    print("WARNING: OMDB_API_KEY not found; Omdb integration disabled.")
+OMDB_BASE_URL = 'http://www.omdbapi.com/'
+
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
-# Similarity threshold (0.96 default is stricter)
-SIMILARITY_THRESHOLD = 0.90
+# Similarity threshold (0.85 default is stricter)
+SIMILARITY_THRESHOLD = 0.85
 
 # Early stopping threshold (stop processing more stills if a match exceeds this)
-EARLY_STOP_THRESHOLD = 0.96
+EARLY_STOP_THRESHOLD = 0.95
 
 # Temp directory
 TEMP_DIR = 'temp'
@@ -452,35 +458,38 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         verify_path = os.path.join(VERIFY_DIR, safe_dirname)
         os.makedirs(verify_path, exist_ok=True)
         
-        # FETCH STILL IMAGES BEFORE EXTRACTION; bail if none
+        # FETCH STILL IMAGES BEFORE EXTRACTION; gather from all providers and bail if none
+        stills_to_process_list = []
         if force_still_path:
             if not os.path.exists(force_still_path):
                 print(f"ERROR: Forced still file not found: {force_still_path}")
                 return False
-            stills_source = 'forced'
-            stills_to_process_list = [{ 'file_path': force_still_path, 'source': 'forced' }]
+            stills_to_process_list.append({ 'file_path': force_still_path, 'source': 'forced' })
         else:
-            # First, try TheTVDB stills (lookup by ID or search by name)
+            # OMDb
+            if OMDB_API_KEY:
+                omdb_images = get_omdb_episode_images(file_info['show'], file_info['season'], file_info['episode'])
+                if omdb_images and len(omdb_images) > 0:
+                    stills_to_process_list.extend([{ 'file_path': img['file_path'], 'source': 'OMDB' } for img in omdb_images])
+            # TVDB
             tvdb_images = None
             tvdb_series_id = file_info.get('tvdbId')
             if not tvdb_series_id:
                 tvdb_series_id = search_tvdb_series(file_info['show'])
-            if tvdb_series_id:
+            if tvdb_series_id and TVDB_API_KEY:
                 print(f"[TVDB] Fetching stills for series {tvdb_series_id}")
                 tvdb_images = get_tvdb_episode_images(tvdb_series_id, file_info['season'], file_info['episode'])
-            if tvdb_images and len(tvdb_images) > 0:
-                stills_source = 'TVDB'
-                stills_to_process_list = tvdb_images
-            else:
-                print("No episode stills available from TVDB, falling back to TMDB")
-                episode_images = get_episode_images(file_info['tmdbId'], file_info['season'], file_info['episode'])
-                if not episode_images or 'stills' not in episode_images or len(episode_images['stills']) == 0:
-                    print("No episode stills available from TMDB")
-                    return False
-                stills_source = 'TMDB'
-                stills_to_process_list = episode_images['stills']
+                if tvdb_images and len(tvdb_images) > 0:
+                    stills_to_process_list.extend([{ 'file_path': img['file_path'], 'source': 'TVDB' } for img in tvdb_images])
+            # TMDB
+            episode_images = get_episode_images(file_info['tmdbId'], file_info['season'], file_info['episode'])
+            if episode_images and 'stills' in episode_images and len(episode_images['stills']) > 0:
+                stills_to_process_list.extend([{ 'file_path': img['file_path'], 'source': 'TMDB' } for img in episode_images['stills']])
+        if not stills_to_process_list:
+            print("No episode stills available from any provider")
+            return False
         stills_to_process = min(len(stills_to_process_list), max_stills)
-        print(f"Found {len(stills_to_process_list)} stills for episode from {stills_source} (will process up to {stills_to_process})")
+        print(f"Found {len(stills_to_process_list)} total stills (will process up to {stills_to_process})")
 
         # For strict mode, track matches for each still
         still_matches = []
@@ -496,48 +505,47 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         # Initialize CLIP model
         print("Loading CLIP model...")
         # Define the model name to use
-        MODEL_NAME = model_name_override if model_name_override else "openai/clip-vit-large-patch14"
+        MODEL_NAME = model_name_override if model_name_override else "openai/clip-vit-base-patch32"
         try:
             model = CLIPModel.from_pretrained(MODEL_NAME, force_download=False).to(device)
-            processor = CLIPProcessor.from_pretrained(MODEL_NAME, force_download=False, use_fast=False)
-            print(f"Using {MODEL_NAME} with standard image processor (not fast)")
+            processor = CLIPProcessor.from_pretrained(MODEL_NAME, force_download=False, use_fast=True)
+            print(f"Using {MODEL_NAME} with fast image processor")
         except Exception as e:
             print(f"Error loading model: {str(e)}")
             print("Trying alternate loading approach...")
             # Fallback approach if the first attempt fails
             model = CLIPModel.from_pretrained(MODEL_NAME, local_files_only=False).to(device)
-            processor = CLIPProcessor.from_pretrained(MODEL_NAME, local_files_only=False, use_fast=False)
-            print(f"Fallback successful: loaded {MODEL_NAME}")
+            processor = CLIPProcessor.from_pretrained(MODEL_NAME, local_files_only=False, use_fast=True)
+            print(f"Fallback successful: loaded {MODEL_NAME} with fast processor")
             
         # Process the specified number of stills
         max_similarity = 0.0
         best_match_frame = None
         best_match_still = None
         best_match_still_path = None
+        best_match_source = None
         
         for still_index, still_info in enumerate(stills_to_process_list[:stills_to_process]):
-            if force_still_path:
-                still_path = still_info['file_path'] # This is already a local path
+            source = still_info.get('source')
+            if source == 'forced':
+                still_path = still_info['file_path']
                 print(f"\nProcessing forced still #{still_index + 1} (Path: {still_path})")
             else:
-                # Build the download URL based on source
-                if stills_source == 'TVDB':
-                    # TVDB returns full image URLs; use directly if so
+                if source == 'TVDB':
                     path_or_url = still_info['file_path']
-                    if path_or_url.startswith('http'):
-                        still_url = path_or_url
-                    else:
-                        still_url = f"{TVDB_IMAGE_BASE_URL}{path_or_url}"
-                else:
+                    still_url = path_or_url if path_or_url.startswith('http') else f"{TVDB_IMAGE_BASE_URL}{path_or_url}"
+                elif source == 'OMDB':
+                    still_url = still_info['file_path']
+                elif source == 'TMDB':
                     still_url = f"{TMDB_IMAGE_BASE_URL}{still_info['file_path']}"
-                # Prepare file path for this still
+                else:
+                    print(f"Unknown still source '{source}', skipping")
+                    continue
                 still_path = os.path.join(TEMP_DIR, f"{safe_dirname}_still_{still_index + 1}.jpg")
-                # Download the reference still
-                print(f"\nProcessing still #{still_index + 1} of {stills_to_process} (source: {stills_source}) URL: {still_url}")
+                print(f"\nProcessing still #{still_index + 1} of {stills_to_process} (source: {source}) URL: {still_url}")
                 if not download_image(still_url, still_path):
                     print(f"Failed to download still: {still_url}")
-                    continue # Skip this still
-            
+                    continue
             # Get embedding for the reference still
             print(f"Getting embedding for still #{still_index + 1}...")
             still_image = Image.open(still_path)
@@ -579,6 +587,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
                         best_match_frame = frame_path
                         best_match_still = still_index + 1
                         best_match_still_path = still_path
+                        best_match_source = source
                         print(f"New overall best match: {similarity:.3f} (frame: {os.path.basename(frame_path)}, still: #{still_index + 1})")
                         
                         # Early stopping if we hit the early stop threshold
@@ -603,7 +612,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
             # Create comparison image for this still
             if still_best_match:
                 comparison_path = os.path.join(verify_path, f"still_{still_index + 1}_match.jpg")
-                create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info, source=stills_source)
+                create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info, source=source)
             
             # Early stopping if we hit the early stop threshold
             if max_similarity >= early_stop_threshold:
@@ -628,7 +637,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         # Create final verification image for the best match
         if best_match_frame and best_match_still_path:
             final_comparison_path = os.path.join(verify_path, "best_match.jpg")
-            create_comparison_image(best_match_still_path, best_match_frame, final_comparison_path, max_similarity, file_info, source=stills_source)
+            create_comparison_image(best_match_still_path, best_match_frame, final_comparison_path, max_similarity, file_info, source=best_match_source)
         
         print("\nResults:")
         print("---------")
@@ -656,6 +665,22 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         traceback.print_exc()
         return False
 
+def get_omdb_episode_images(show_name: str, season: int, episode: int):
+    """Get episode poster from OMDb."""
+    try:
+        print(f"[OMDB] Fetching episode info: {show_name} S{season}E{episode}")
+        res = requests.get(OMDB_BASE_URL, params={"apikey": OMDB_API_KEY, "t": show_name, "Season": season, "Episode": episode})
+        res.raise_for_status()
+        data = res.json()
+        poster = data.get("Poster")
+        if poster and poster != "N/A":
+            print(f"[OMDB] Found poster: {poster}")
+            return [{"file_path": poster}]
+        print("[OMDB] No poster found for this episode.")
+    except Exception as e:
+        print(f"[OMDB] Error fetching episode poster: {e}")
+    return None
+
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Match TV show episodes with stills')
@@ -672,7 +697,7 @@ def main():
                         help='Force CPU mode even if GPU is available')
     parser.add_argument('--force-still', type=str, default=None,
                         help='Path to a specific still image to use, bypassing TMDB lookup for stills.')
-    parser.add_argument('--model-name', type=str, default="openai/clip-vit-large-patch14",
+    parser.add_argument('--model-name', type=str, default="openai/clip-vit-base-patch32",
                         help='Name of the CLIP model to use from HuggingFace Transformers.')
     
     # Parse arguments
