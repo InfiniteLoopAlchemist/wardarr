@@ -14,11 +14,12 @@ import numpy as np
 from pathlib import Path
 import re
 import torch
-from transformers import CLIPProcessor, CLIPModel
+from transformers import ViTImageProcessor, ViTModel
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 import time
 import sqlite3
+import math
 
 # Filter out the specific HuggingFace warning about resume_download
 warnings.filterwarnings("ignore", message=".*resume_download.*", category=FutureWarning)
@@ -52,11 +53,8 @@ OMDB_BASE_URL = 'http://www.omdbapi.com/'
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
-# Similarity threshold (0.85 default is stricter)
-SIMILARITY_THRESHOLD = 0.85
-
 # Early stopping threshold (stop processing more stills if a match exceeds this)
-EARLY_STOP_THRESHOLD = 0.95
+EARLY_STOP_THRESHOLD = 0.87
 
 # Temp directory
 TEMP_DIR = 'temp'
@@ -320,8 +318,12 @@ def extract_frames(video_path, output_dir, frame_rate=1):
             raise FileNotFoundError(f"Video file does not exist: {video_path}")
         
         # Extract frames using FFmpeg
-        ffmpeg_cmd = f'ffmpeg -i "{video_path}" -vf "fps={frame_rate}" -q:v 2 "{output_dir}/frame-%04d.jpg"'
+        # Resize frames to 720p height for faster processing
+        ffmpeg_cmd = f'ffmpeg -y -nostdin -hide_banner -loglevel error -i "{video_path}" -vf "fps={frame_rate},scale=-2:720" -q:v 2 "{output_dir}/frame-%04d.jpg"'
+        print(f"Running ffmpeg command: {ffmpeg_cmd}")
         process = subprocess.run(ffmpeg_cmd, shell=True, capture_output=True, text=True)
+        print(f"FFmpeg exited with code {process.returncode}")
+        print(f"FFmpeg stderr: {process.stderr}")
         
         if process.returncode != 0:
             print(f"FFmpeg error: {process.stderr}")
@@ -351,31 +353,19 @@ def cosine_similarity(a, b):
 def process_batch(batch, still_embedding, processor, model):
     """Process a batch of frames to calculate similarity with the still."""
     results = []
-    
     for frame_path in batch:
         try:
-            # Load and process the image
             image = Image.open(frame_path)
             inputs = processor(images=image, return_tensors="pt")
-            
-            # Move inputs to device
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            # Get image embedding
+            pixel_values = inputs["pixel_values"].to(device)
             with torch.no_grad():
-                frame_embedding = model.get_image_features(**inputs).squeeze().cpu().numpy()
-            
-            # Calculate similarity
+                outputs = model(pixel_values=pixel_values)
+            # Use CLS token embedding only
+            frame_embedding = outputs.last_hidden_state[:, 0, :].squeeze().cpu().numpy()
             similarity = cosine_similarity(still_embedding, frame_embedding)
-            
-            results.append({
-                "path": frame_path,
-                "similarity": similarity
-            })
-            
+            results.append({"path": frame_path, "similarity": similarity})
         except Exception as e:
             print(f"Error processing frame {frame_path}: {str(e)}")
-    
     return results
 
 def create_comparison_image(still_path, frame_path, output_path, similarity, episode_info=None, source='TMDB'):
@@ -428,14 +418,13 @@ def create_comparison_image(still_path, frame_path, output_path, similarity, epi
         traceback.print_exc()
         return None
 
-def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD, force_still_path=None, model_name_override=None):
+def process_media_file(media_path, max_stills=20, strict_mode=False, early_stop_threshold=EARLY_STOP_THRESHOLD, force_still_path=None, model_name_override=None):
     """Main function to process a media file."""
     try:
         import time
         start_time = time.time()
         
         print(f"Processing file: {media_path}")
-        print(f"Using similarity threshold: {threshold}")
         print(f"Early stopping threshold: {early_stop_threshold}")
         print(f"Maximum stills to process: {max_stills}")
         print(f"Strict mode: {strict_mode}")
@@ -494,30 +483,34 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         # For strict mode, track matches for each still
         still_matches = []
 
-        # Extract frames from video
+        # Copy media locally for faster I/O (cache in temp)
+        os.makedirs(TEMP_DIR, exist_ok=True)
+        media_ext = os.path.splitext(media_path)[1]
+        local_media_path = os.path.join(TEMP_DIR, safe_dirname + media_ext)
+        if not os.path.exists(local_media_path):
+            print(f"Copying media to local temp: {local_media_path}")
+            try:
+                shutil.copy2(media_path, local_media_path)
+            except Exception as e:
+                print(f"Warning: Failed to copy media to temp: {e}")
+                local_media_path = media_path
+        else:
+            print(f"Local media already cached: {local_media_path}")
+        # Extract frames from video (using local copy)
         frames_dir = os.path.join(TEMP_DIR, safe_dirname + "_frames")
-        frame_paths = extract_frames(media_path, frames_dir, FRAME_RATE)
+        frame_paths = extract_frames(local_media_path, frames_dir, FRAME_RATE)
         
         if len(frame_paths) == 0:
             print("Failed to extract frames from video")
             return False
         
-        # Initialize CLIP model
-        print("Loading CLIP model...")
-        # Define the model name to use
-        MODEL_NAME = model_name_override if model_name_override else "openai/clip-vit-base-patch32"
-        try:
-            model = CLIPModel.from_pretrained(MODEL_NAME, force_download=False).to(device)
-            processor = CLIPProcessor.from_pretrained(MODEL_NAME, force_download=False, use_fast=True)
-            print(f"Using {MODEL_NAME} with fast image processor")
-        except Exception as e:
-            print(f"Error loading model: {str(e)}")
-            print("Trying alternate loading approach...")
-            # Fallback approach if the first attempt fails
-            model = CLIPModel.from_pretrained(MODEL_NAME, local_files_only=False).to(device)
-            processor = CLIPProcessor.from_pretrained(MODEL_NAME, local_files_only=False, use_fast=True)
-            print(f"Fallback successful: loaded {MODEL_NAME} with fast processor")
-            
+        # Initialize DINO vision transformer model for embeddings
+        print("Loading DINO model...")
+        MODEL_NAME = model_name_override if model_name_override else "facebook/dino-vitb16"
+        model = ViTModel.from_pretrained(MODEL_NAME, add_pooling_layer=False).to(device)
+        processor = ViTImageProcessor.from_pretrained(MODEL_NAME)
+        print(f"Using DINO model: {MODEL_NAME}")
+        
         # Process the specified number of stills
         max_similarity = 0.0
         best_match_frame = None
@@ -548,14 +541,19 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
                     continue
             # Get embedding for the reference still
             print(f"Getting embedding for still #{still_index + 1}...")
-            still_image = Image.open(still_path)
-            still_inputs = processor(images=still_image, return_tensors="pt")
-            
-            # Move inputs to device
-            still_inputs = {k: v.to(device) for k, v in still_inputs.items()}
-            
+            # Skip invalid still images that cannot be opened
+            try:
+                still_image = Image.open(still_path)
+            except Exception as e:
+                print(f"Warning: Could not open still image {still_path}: {e}")
+                # Skip to next still
+                continue
+            inputs = processor(images=still_image, return_tensors="pt")
+            pixel_values = inputs["pixel_values"].to(device)
             with torch.no_grad():
-                still_embedding = model.get_image_features(**still_inputs).squeeze().cpu().numpy()
+                outputs = model(pixel_values=pixel_values)
+            # Use CLS token embedding only
+            still_embedding = outputs.last_hidden_state[:, 0, :].squeeze().cpu().numpy()
             
             # Compare with video frames
             print(f"Comparing still #{still_index + 1} with video frames...")
@@ -593,13 +591,10 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
                         # Early stopping if we hit the early stop threshold
                         if similarity >= early_stop_threshold:
                             print(f"Early stopping at similarity {similarity:.3f} (≥ {early_stop_threshold})")
-                            # Break out of frame processing loop
-                            break
                 
                 # Early stopping after batch if we hit the threshold
                 if max_similarity >= early_stop_threshold:
                     print(f"Early stopping processing of frames at similarity {max_similarity:.3f}")
-                    break
             
             # Store match for this still for strict mode
             still_matches.append({
@@ -614,22 +609,22 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
                 comparison_path = os.path.join(verify_path, f"still_{still_index + 1}_match.jpg")
                 create_comparison_image(still_path, still_best_match, comparison_path, still_max_similarity, file_info, source=source)
             
-            # Early stopping if we hit the early stop threshold
-            if max_similarity >= early_stop_threshold:
-                print(f"Early stopping at still #{still_index + 1} - found match with similarity {max_similarity:.3f} (≥ {early_stop_threshold})")
+            # Early stopping after processing this still if its best match meets the threshold
+            if still_max_similarity >= early_stop_threshold:
+                print(f"Early stopping at still #{still_index + 1} - found match with similarity {still_max_similarity:.3f} (≥ {early_stop_threshold})")
                 break
         
-        # Determine if this is a match based on mode
+        # Determine if this is a match based solely on early-stop threshold
         if strict_mode:
             # In strict mode, require all stills to match above threshold
-            all_matched = all(match["max_similarity"] >= threshold for match in still_matches)
+            all_matched = all(match["max_similarity"] >= early_stop_threshold for match in still_matches)
             is_match = all_matched
-            print(f"\nStrict mode: Requiring all {len(still_matches)} stills to match above threshold {threshold}")
+            print(f"\nStrict mode: Requiring all {len(still_matches)} stills to match above threshold {early_stop_threshold}")
             for match in still_matches:
-                print(f"Still #{match['still_index']}: Similarity {match['max_similarity']:.3f} - {'✓' if match['max_similarity'] >= threshold else '✗'}")
+                print(f"Still #{match['still_index']}: Similarity {match['max_similarity']:.3f} - {'✓' if match['max_similarity'] >= early_stop_threshold else '✗'}")
         else:
             # In normal mode, just need the best match to be above threshold
-            is_match = max_similarity >= threshold
+            is_match = max_similarity >= early_stop_threshold
         
         end_time = time.time()
         total_duration = end_time - start_time
@@ -646,7 +641,7 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
             print(f"Episode: {file_info['display_name']}")
         else:
             print(f"Episode: {file_info['show']} S{file_info['season']}E{file_info['episode']}")
-        print(f"Best match: {max_similarity:.3f} (threshold: {threshold})")
+        print(f"Best match: {max_similarity:.3f} (threshold: {early_stop_threshold})")
         print(f"Match: {'✓ VERIFIED' if is_match else '✗ WRONG EPISODE'}")
         if best_match_frame:
             print(f"Best matching frame: {os.path.basename(best_match_frame)}")
@@ -657,7 +652,26 @@ def process_media_file(media_path, threshold=SIMILARITY_THRESHOLD, max_stills=10
         # Display path to verification images
         print(f"\nVerification images saved to: {verify_path}")
         print("Please check these images to manually confirm the match.")
-        
+        # Cleanup temporary frames directory
+        try:
+            shutil.rmtree(frames_dir)
+            print(f"Deleted temporary frames directory: {frames_dir}")
+        except Exception as e:
+            print(f"Warning: Failed to delete temporary frames directory {frames_dir}: {e}")
+        # Delete local media copy if one was made
+        if 'local_media_path' in locals() and local_media_path != media_path:
+            try:
+                os.remove(local_media_path)
+                print(f"Deleted local media copy: {local_media_path}")
+            except Exception as e:
+                print(f"Warning: Failed to delete local media copy {local_media_path}: {e}")
+        # Cleanup temporary stills
+        try:
+            for fpath in Path(TEMP_DIR).glob(f"{safe_dirname}_still_*.jpg"):
+                fpath.unlink()
+            print(f"Deleted temporary stills for {safe_dirname}")
+        except Exception as e:
+            print(f"Warning: Failed to delete temporary stills for {safe_dirname}: {e}")
         return is_match
     
     except Exception as e:
@@ -685,11 +699,9 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Match TV show episodes with stills')
     parser.add_argument('media_path', help='Path to the media file')
-    parser.add_argument('--threshold', type=float, default=SIMILARITY_THRESHOLD,
-                        help=f'Similarity threshold (default: {SIMILARITY_THRESHOLD})')
-    parser.add_argument('--early-stop', type=float, default=EARLY_STOP_THRESHOLD,
+    parser.add_argument('--early-stop', '--threshold', dest='early_stop', type=float, default=EARLY_STOP_THRESHOLD,
                         help=f'Early stopping threshold (default: {EARLY_STOP_THRESHOLD})')
-    parser.add_argument('--max-stills', type=int, default=10,
+    parser.add_argument('--max-stills', type=int, default=20,
                         help='Maximum number of stills to use from TVDB/TMDB')
     parser.add_argument('--strict', action='store_true',
                         help='Strict mode - only verify if similarity exceeds threshold')
@@ -697,11 +709,19 @@ def main():
                         help='Force CPU mode even if GPU is available')
     parser.add_argument('--force-still', type=str, default=None,
                         help='Path to a specific still image to use, bypassing TMDB lookup for stills.')
-    parser.add_argument('--model-name', type=str, default="openai/clip-vit-base-patch32",
+    parser.add_argument('--model-name', type=str, default="facebook/dino-vitb16",
                         help='Name of the CLIP model to use from HuggingFace Transformers.')
     
     # Parse arguments
     args = parser.parse_args()
+    
+    # If threshold is below default, round up by one hundredth (but not above default)
+    if args.early_stop < EARLY_STOP_THRESHOLD:
+        bumped = (math.floor(args.early_stop * 100) + 1) / 100.0
+        if bumped > EARLY_STOP_THRESHOLD:
+            bumped = EARLY_STOP_THRESHOLD
+        print(f"[WARNING] Provided threshold {args.early_stop:.2f} is below default {EARLY_STOP_THRESHOLD:.2f}, rounding up to {bumped:.2f}")
+        args.early_stop = bumped
     
     # Force CPU if specified
     global device
@@ -711,7 +731,7 @@ def main():
     
     # Process the media file with error handling
     try:
-        is_match = process_media_file(args.media_path, args.threshold, args.max_stills, args.strict, args.early_stop, args.force_still, args.model_name)
+        is_match = process_media_file(args.media_path, args.max_stills, args.strict, args.early_stop, args.force_still, args.model_name)
         # Exit with 0 if match, 1 if no match (standard non-error exit)
         sys.exit(0 if is_match else 1)
     except Exception as e:

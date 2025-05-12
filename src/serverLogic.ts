@@ -5,9 +5,8 @@ import { spawn } from 'child_process';
 // Directory for public assets
 const publicDir = path.join(__dirname, '..', 'public');
 
-// Thresholds for CLIP matcher
-const clipMatcherThreshold = 0.90;
-const clipMatcherEarlyStop = 0.96;
+// Threshold for CLIP matcher early-stop
+const clipMatcherThreshold = 0.87;
 
 // Type for latest successful match result
 export type LatestSuccess = {
@@ -102,10 +101,9 @@ export async function runClipMatcher(filePath: string): Promise<any> {
     const args = [
       scriptPath,
       filePath,
-      '--threshold', String(clipMatcherThreshold),
-      '--early-stop', String(clipMatcherEarlyStop)
+      '--threshold', String(clipMatcherThreshold)
     ];
-    const proc = spawn('python3', args);
+    const proc = spawn('python3', ['-u', ...args]);
     let stdoutData = '';
     let stderrData = '';
     let jsonOutput: any = null;
@@ -237,7 +235,29 @@ export async function processScan(libraries: { path: string; id: number; is_enab
         const modTime = Math.floor(stats.mtimeMs);
         let should = !existing || modTime > existing.file_modified_time;
         if (should) {
+          // Preload current and next two episodes into temp for faster I/O
+          const tempDir = path.join(__dirname, '..', 'temp');
+          await fs.promises.mkdir(tempDir, { recursive: true });
+          for (let preloadIdx = i; preloadIdx < Math.min(i + 3, allFiles.length); preloadIdx++) {
+            const upcoming = allFiles[preloadIdx].path;
+            const base = path.basename(upcoming);
+            const ext = path.extname(base);
+            const nameWithoutExt = ext ? base.slice(0, -ext.length) : base;
+            const safeName = nameWithoutExt.replace(/[^\w\-_]/g, '_');
+            const destPath = path.join(tempDir, safeName + ext);
+            if (!fs.existsSync(destPath)) {
+              console.log(`[PRELOAD] Copying ${upcoming} to ${destPath}`);
+              try {
+                await fs.promises.copyFile(upcoming, destPath);
+              } catch (e) {
+                console.error(`[PRELOAD] Failed to copy ${upcoming}: ${e}`);
+              }
+            }
+          }
           const result = await dynMatch(file.path);
+          if (!result.success) {
+            console.error(`[CLIP-MATCHER] Error for file ${file.path}: ${result.error}`);
+          }
           let imgPath = null;
           // Attempt to copy new verification image on success
           if (result.success && result.verificationPath) {
