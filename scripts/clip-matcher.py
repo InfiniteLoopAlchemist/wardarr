@@ -54,7 +54,7 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
 # Early stopping threshold (stop processing more stills if a match exceeds this)
-EARLY_STOP_THRESHOLD = 0.87
+EARLY_STOP_THRESHOLD = 0.79
 
 # Temp directory
 TEMP_DIR = 'temp'

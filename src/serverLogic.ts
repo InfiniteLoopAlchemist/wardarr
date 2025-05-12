@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 const publicDir = path.join(__dirname, '..', 'public');
 
 // Threshold for CLIP matcher early-stop
-const clipMatcherThreshold = 0.87;
+const clipMatcherThreshold = 0.79;
 
 // Type for latest successful match result
 export type LatestSuccess = {
