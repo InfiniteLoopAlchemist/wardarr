@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 type Show = { name: string; path: string };
 
-export function useLibraries(baseUrl: string = 'http://localhost:5000') {
+export function useLibraries(baseUrl: string = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000') {
   const [shows, setShows] = useState<Show[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);

@@ -19,6 +19,8 @@ interface LibraryManagerProps {
   onLibraryAdd: () => void;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+
 export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAdd }: LibraryManagerProps) {
   const [newLibraryPath, setNewLibraryPath] = useState('');
   const [newLibraryTitle, setNewLibraryTitle] = useState('');
@@ -40,7 +42,7 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/libraries', {
+      const response = await fetch(`${API_BASE}/api/libraries`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,7 +76,7 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
   const fetchDirectoryContents = async (path: string) => {
     try {
       setBrowseFetchError(null);
-      const response = await fetch(`http://localhost:5000/api/browse?path=${encodeURIComponent(path)}`);
+      const response = await fetch(`${API_BASE}/api/browse?path=${encodeURIComponent(path)}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);

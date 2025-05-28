@@ -10,7 +10,7 @@ type ScanStatus = {
   stopRequested: boolean;
 };
 
-export function useScan(baseUrl: string = 'http://localhost:5000') {
+export function useScan(baseUrl: string = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000') {
   const [scanStatus, setScanStatus] = useState<ScanStatus>({
     isScanning: false,
     totalFiles: 0,

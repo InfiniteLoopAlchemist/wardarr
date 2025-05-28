@@ -50,6 +50,8 @@ interface Season {
   path: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+
 export default function Dashboard() {
   const { scanStatus, error: scanError, isStopping, stopMessage, startScan, stopScan } = useScan();
   const { latest: latestScan, error: matchError } = useLatestMatch();
@@ -152,7 +154,7 @@ export default function Dashboard() {
             <div className="bg-black rounded overflow-hidden">
               <img
                 key={latestScan.last_scanned_time!}
-                src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${latestScan.verification_image_path}?t=${latestScan.last_scanned_time!}`}
+                src={`${API_BASE}${latestScan.verification_image_path}?t=${latestScan.last_scanned_time!}`}
                 alt="Verification"
                 className="w-full h-auto"
               />

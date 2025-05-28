@@ -10,7 +10,7 @@ type LatestMatch = {
   last_scanned_time?: number;
 };
 
-export function useLatestMatch(baseUrl: string = 'http://localhost:5000') {
+export function useLatestMatch(baseUrl: string = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000') {
   const [latest, setLatest] = useState<LatestMatch | null>(null);
   const [error, setError] = useState<string | null>(null);
 

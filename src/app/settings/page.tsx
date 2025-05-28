@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+
 export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -18,7 +20,7 @@ export default function SettingsPage() {
     setMessageType(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/queue', {
+      const response = await fetch(`${API_BASE}/api/queue`, {
         method: 'DELETE',
       });
 

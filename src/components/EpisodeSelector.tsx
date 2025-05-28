@@ -26,6 +26,8 @@ interface EpisodeSelectorProps {
   episodes: Episode[];
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+
 // Extracted matcher function for testing and reuse
 export async function runClipMatcherFn(
   selectedEpisode: Episode | null,
@@ -38,7 +40,7 @@ export async function runClipMatcherFn(
   setIsRunningMatcher(true);
   setMatchResult(null);
   try {
-    const response = await fetch('http://localhost:5000/api/match', {
+    const response = await fetch(`${API_BASE}/api/match`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ episodePath: selectedEpisode.path }),
@@ -123,7 +125,7 @@ export default function EpisodeSelector({ episodes }: EpisodeSelectorProps) {
 
   // Open in a new tab for direct playback
   const openInNewTab = (episode: Episode) => {
-    const videoUrl = `http://localhost:5000/api/stream?path=${encodeURIComponent(episode.path)}`;
+    const videoUrl = `${API_BASE}/api/stream?path=${encodeURIComponent(episode.path)}`;
     window.open(videoUrl, '_blank');
   };
   
@@ -173,7 +175,7 @@ export default function EpisodeSelector({ episodes }: EpisodeSelectorProps) {
                       <div key={i} className="border p-2 rounded">
                         <p className="text-sm mb-1">{image.name}</p>
                         <img 
-                          src={`http://localhost:5000${image.url}`}
+                          src={`${API_BASE}${image.url}`}
                           alt={`Match ${i+1}`} 
                           className="w-full h-auto rounded" 
                         />

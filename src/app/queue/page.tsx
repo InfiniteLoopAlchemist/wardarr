@@ -14,6 +14,8 @@ interface ScannedFile {
   episode_info: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+
 export default function QueuePage() {
   const [scannedFiles, setScannedFiles] = useState<ScannedFile[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export default function QueuePage() {
     try {
       // Don't set loading to true on interval fetches, only initial
       // setLoading(true); 
-      const response = await fetch('http://localhost:5000/api/queue');
+      const response = await fetch(`${API_BASE}/api/queue`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -114,7 +116,7 @@ export default function QueuePage() {
             <div key={file.id} className="bg-gray-800 rounded-lg overflow-hidden shadow-lg">
               {file.verification_image_path ? (
                 <img 
-                  src={`${(process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000')}${file.verification_image_path}?t=${file.last_scanned_time}`} 
+                  src={`${API_BASE}${file.verification_image_path}?t=${file.last_scanned_time}`} 
                   alt="Verification" 
                   className="w-full h-auto"
                 />

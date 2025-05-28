@@ -15,6 +15,8 @@ interface Library {
   radarr_port?: number | null;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+
 export default function LibrariesPage() {
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +27,7 @@ export default function LibrariesPage() {
   const fetchLibraries = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/libraries');
+      const response = await fetch(`${API_BASE}/api/libraries`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -59,7 +61,7 @@ export default function LibrariesPage() {
       return;
     }
     try {
-      const response = await fetch(`http://localhost:5000/api/libraries/${libraryId}`, {
+      const response = await fetch(`${API_BASE}/api/libraries/${libraryId}`, {
         method: 'DELETE',
       });
       if (!response.ok) {
@@ -84,7 +86,7 @@ export default function LibrariesPage() {
     }
 
     try {
-        const response = await fetch(`http://localhost:5000/api/libraries/${library.id}`, {
+        const response = await fetch(`${API_BASE}/api/libraries/${library.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_enabled: newStatus }),
@@ -145,7 +147,7 @@ export default function LibrariesPage() {
                 return;
             }
 
-            const response = await fetch(`http://localhost:5000/api/libraries/${editingLibrary.id}`, {
+            const response = await fetch(`${API_BASE}/api/libraries/${editingLibrary.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updates),

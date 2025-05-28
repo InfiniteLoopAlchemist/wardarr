@@ -4,7 +4,7 @@ type Show = { name: string; path: string };
 type Season = { name: string; path: string };
 type Episode = { filename: string; path: string; season: number; episode: number; name: string };
 
-export function useMediaBrowser(baseUrl: string = 'http://localhost:5000') {
+export function useMediaBrowser(baseUrl: string = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000') {
   const [shows, setShows] = useState<Show[]>([]); // optional: if orchestrating libraries hook externally
   const [selectedShow, setSelectedShow] = useState<Show | null>(null);
   const [seasons, setSeasons] = useState<Season[]>([]);

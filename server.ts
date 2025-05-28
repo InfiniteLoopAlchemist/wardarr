@@ -29,7 +29,7 @@ const db = require('./src/db.ts').default;
 // __dirname and __filename are available in CommonJS
 
 const app = express();
-const PORT = Number(process.env.PORT ?? '5000'); // Used in server.listen at the bottom of the file
+const PORT = Number(process.env.PORT ?? '51510'); // Changed default port to 51510 to avoid conflicts
 
 // Enhanced logging middleware
 
