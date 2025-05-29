@@ -61,6 +61,12 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
       if (response.ok) {
         setNewLibraryPath('');
         setNewLibraryTitle('');
+        setNewLibraryType('tv');
+        setNewSonarrApiKey('');
+        setNewRadarrApiKey('');
+        setNewSonarrPort('');
+        setNewRadarrPort('');
+        setBrowseFetchError(null);
         onLibraryAdd();
         setIsDirectoryBrowserOpen(false);
       } else {
