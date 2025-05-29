@@ -145,18 +145,22 @@ console.log('[SERVER] Added JSON parsing middleware and static file handling');
 const getLibrariesStmt = db.prepare('SELECT * FROM libraries');
 // Include API key columns for movie and TV libraries
 const addLibraryStmt = db.prepare(
-  'INSERT INTO libraries (title, path, type, sonarr_api_key, radarr_api_key) VALUES (?, ?, ?, ?, ?)' 
+  'INSERT INTO libraries (title, path, type, sonarr_api_key, radarr_api_key, sonarr_port, radarr_port) VALUES (?, ?, ?, ?, ?, ?, ?)'
 );
 
-// Wrap addLibrary to accept either (title, path, type) or with API keys
+// Wrap addLibrary to accept full params including ports
 const addLibraryWrapper = {
   run: (...args: any[]) => {
-    // args: [title, path, type, sonarrKey?, radarrKey?]
-    if (args.length === 3) {
-      return addLibraryStmt.run(args[0], args[1], args[2], null, null);
-    }
+    // args: [title, path, type, sonarrKey?, radarrKey?, sonarrPort?, radarrPort?]
+    const [title, path, type, sonarrKey, radarrKey, sonarrPort, radarrPort] = args;
     return addLibraryStmt.run(
-      args[0], args[1], args[2], args[3] ?? null, args[4] ?? null
+      title,
+      path,
+      type,
+      sonarrKey ?? null,
+      radarrKey ?? null,
+      sonarrPort ?? null,
+      radarrPort ?? null
     );
   }
 };
