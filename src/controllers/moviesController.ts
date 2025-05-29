@@ -20,9 +20,7 @@ export const getMovies = async (req: Request, res: Response) => {
     }
 
     // Determine base URL using per-library port if set, else environment or default
-    const baseUrl = lib.radarr_port
-      ? `http://localhost:${lib.radarr_port}`
-      : process.env.RADARR_URL || 'http://localhost:7878';
+    const baseUrl = String(lib.radarr_port) || 'http://localhost:7878';
     const response = await axios.get(`${baseUrl}/api/v3/movie`, {
       headers: { 'X-Api-Key': lib.radarr_api_key }
     });

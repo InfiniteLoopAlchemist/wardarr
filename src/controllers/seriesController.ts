@@ -19,9 +19,9 @@ export const getSeries = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing Sonarr API key' });
     }
 
-    // Determine base URL using per-library port if set, else environment or default
+    // Determine Sonarr base URL from library config or environment/default
     const baseUrl = lib.sonarr_port
-      ? `http://localhost:${lib.sonarr_port}`
+      ? String(lib.sonarr_port)
       : process.env.SONARR_URL || 'http://localhost:8989';
     const response = await axios.get(`${baseUrl}/api/v3/series`, {
       headers: { 'X-Api-Key': lib.sonarr_api_key }
