@@ -11,8 +11,8 @@ interface Library {
   is_enabled: number; // Changed to number (0 or 1)
   sonarr_api_key?: string | null;
   radarr_api_key?: string | null;
-  sonarr_port?: number | null;
-  radarr_port?: number | null;
+  sonarr_port?: string | number | null;
+  radarr_port?: string | number | null;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
@@ -139,8 +139,8 @@ export default function LibrariesPage() {
             if (currentType !== editingLibrary.type) updates.type = currentType;
             if (currentType === 'tv' && currentSonarrApiKey !== editingLibrary.sonarr_api_key) updates.sonarr_api_key = currentSonarrApiKey;
             if (currentType === 'movie' && currentRadarrApiKey !== editingLibrary.radarr_api_key) updates.radarr_api_key = currentRadarrApiKey;
-            if (currentType === 'tv' && currentSonarrPort !== (editingLibrary.sonarr_port?.toString() || '')) updates.sonarr_port = parseInt(currentSonarrPort);
-            if (currentType === 'movie' && currentRadarrPort !== (editingLibrary.radarr_port?.toString() || '')) updates.radarr_port = parseInt(currentRadarrPort);
+            if (currentType === 'tv' && currentSonarrPort !== (editingLibrary.sonarr_port?.toString() || '')) updates.sonarr_port = currentSonarrPort as any;
+            if (currentType === 'movie' && currentRadarrPort !== (editingLibrary.radarr_port?.toString() || '')) updates.radarr_port = currentRadarrPort as any;
 
             if (Object.keys(updates).length === 0) {
                 handleCloseEditModal(); // No changes
@@ -220,12 +220,13 @@ export default function LibrariesPage() {
                           />
                         </div>
                         <div className="mb-4">
-                          <label htmlFor="edit-sonarr-port" className="block text-sm font-medium text-gray-300 mb-1">Sonarr Port</label>
+                          <label htmlFor="edit-sonarr-port" className="block text-sm font-medium text-gray-300 mb-1">Sonarr Base URL</label>
                           <input
-                            type="number"
+                            type="text"
                             id="edit-sonarr-port"
                             value={currentSonarrPort}
                             onChange={(e) => setCurrentSonarrPort(e.target.value)}
+                            placeholder="http://192.168.1.7:8989"
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-100"
                           />
                         </div>
@@ -244,12 +245,13 @@ export default function LibrariesPage() {
                           />
                         </div>
                         <div className="mb-4">
-                          <label htmlFor="edit-radarr-port" className="block text-sm font-medium text-gray-300 mb-1">Radarr Port</label>
+                          <label htmlFor="edit-radarr-port" className="block text-sm font-medium text-gray-300 mb-1">Radarr Base URL</label>
                           <input
-                            type="number"
+                            type="text"
                             id="edit-radarr-port"
                             value={currentRadarrPort}
                             onChange={(e) => setCurrentRadarrPort(e.target.value)}
+                            placeholder="http://192.168.1.7:7878"
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-100"
                           />
                         </div>

@@ -53,8 +53,8 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
           type: newLibraryType,
           sonarr_api_key: newSonarrApiKey,
           radarr_api_key: newRadarrApiKey,
-          sonarr_port: newSonarrPort ? parseInt(newSonarrPort) : undefined,
-          radarr_port: newRadarrPort ? parseInt(newRadarrPort) : undefined
+          sonarr_port: newSonarrPort || undefined,
+          radarr_port: newRadarrPort || undefined
         }),
       });
 
@@ -191,12 +191,12 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
         )}
         {newLibraryType === 'tv' && (
           <div className="mb-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sonarr Port</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sonarr Base URL</label>
             <input
-              type="number"
+              type="text"
               value={newSonarrPort}
               onChange={(e) => setNewSonarrPort(e.target.value)}
-              placeholder="8989"
+              placeholder="http://192.168.1.7:8989"
               className="w-full p-2 border rounded text-gray-800"
             />
           </div>
@@ -215,12 +215,12 @@ export default function LibraryManager({ libraries, onLibrarySelect, onLibraryAd
         )}
         {newLibraryType === 'movie' && (
           <div className="mb-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Radarr Port</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Radarr Base URL</label>
             <input
-              type="number"
+              type="text"
               value={newRadarrPort}
               onChange={(e) => setNewRadarrPort(e.target.value)}
-              placeholder="7878"
+              placeholder="http://192.168.1.7:7878"
               className="w-full p-2 border rounded text-gray-800"
             />
           </div>

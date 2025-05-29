@@ -9,7 +9,7 @@ interface Library {
   path: string;
   type: 'movie' | 'tv';
   sonarr_api_key?: string | null;
-  sonarr_port?: number | null;
+  sonarr_port?: string | number | null;
 }
 
 // Base URL for backend API
@@ -36,9 +36,11 @@ export default function SeriesPage() {
         const tvLibs = libs.filter(lib => lib.type === 'tv');
         const allSeries = await Promise.all(
           tvLibs.map(async lib => {
-            // Determine Sonarr base URL per library
+            // Determine Sonarr base URL per library (supports full URL string or port)
             const libBaseUrl = lib.sonarr_port
-              ? `http://localhost:${lib.sonarr_port}`
+              ? (typeof lib.sonarr_port === 'string' && lib.sonarr_port.startsWith('http')
+                  ? lib.sonarr_port
+                  : `http://localhost:${lib.sonarr_port}`)
               : process.env.NEXT_PUBLIC_SONARR_URL || 'http://localhost:8989';
             const res = await fetch(`${API_BASE}/api/series/${lib.id}`);
             const data = await res.json();

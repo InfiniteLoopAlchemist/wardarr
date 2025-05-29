@@ -8,7 +8,7 @@ interface Library {
   path: string;
   type: 'movie' | 'tv';
   radarr_api_key?: string | null;
-  radarr_port?: number | null;
+  radarr_port?: string | number | null;
 }
 
 // Base URL for backend API
@@ -31,8 +31,11 @@ export default function MoviesPage() {
         const movieLibs = libs.filter(lib => lib.type === 'movie');
         const allMovies = await Promise.all(
           movieLibs.map(async lib => {
+            // Determine Radarr base URL per library (supports full URL string or port)
             const libBaseUrl = lib.radarr_port
-              ? `http://localhost:${lib.radarr_port}`
+              ? (typeof lib.radarr_port === 'string' && lib.radarr_port.startsWith('http')
+                  ? lib.radarr_port
+                  : `http://localhost:${lib.radarr_port}`)
               : process.env.NEXT_PUBLIC_RADARR_URL || 'http://localhost:7878';
             const res = await fetch(`${API_BASE}/api/movies/${lib.id}`);
             const data: any[] = await res.json();
